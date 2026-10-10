@@ -1,0 +1,29 @@
+@* Phân trang dùng chung
+   Model: (int CurrentPage, int TotalPages, Func<int, string> PageUrl) *@
+@model (int CurrentPage, int TotalPages, Func<int, string> PageUrl)
+
+@if (Model.TotalPages > 1)
+{
+    <nav aria-label="Phân trang">
+        <ul class="pagination pagination-sm mb-0">
+            <li class="page-item @(Model.CurrentPage <= 1 ? "disabled" : "")">
+                <a class="page-link" href="@Model.PageUrl(Model.CurrentPage - 1)" aria-label="Trang trước">
+                    <i class="bi bi-chevron-left"></i>
+                </a>
+            </li>
+
+            @for (int i = Math.Max(1, Model.CurrentPage - 2); i <= Math.Min(Model.TotalPages, Model.CurrentPage + 2); i++)
+            {
+                <li class="page-item @(i == Model.CurrentPage ? "active" : "")">
+                    <a class="page-link" href="@Model.PageUrl(i)">@i</a>
+                </li>
+            }
+
+            <li class="page-item @(Model.CurrentPage >= Model.TotalPages ? "disabled" : "")">
+                <a class="page-link" href="@Model.PageUrl(Model.CurrentPage + 1)" aria-label="Trang sau">
+                    <i class="bi bi-chevron-right"></i>
+                </a>
+            </li>
+        </ul>
+    </nav>
+}

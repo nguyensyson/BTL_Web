@@ -194,6 +194,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.RowVersion).IsRowVersion();
             e.HasOne(x => x.CartItemStatus).WithMany(x => x.CartItems)
                 .HasForeignKey(x => x.StatusId);
+            e.HasOne(x => x.Cart).WithMany(x => x.CartItems)
+                .HasForeignKey(x => x.CartId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.Product).WithMany(x => x.CartItems)
+                .HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.NoAction);
         });
 
         // ── CartItemOption ───────────────────────────────────────────────────
@@ -201,7 +205,21 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
         {
             e.Property(x => x.OptionName).HasMaxLength(100).IsRequired();
             e.Property(x => x.ExtraPrice).HasColumnType("decimal(18,2)");
+            e.HasOne(x => x.CartItem).WithMany(x => x.CartItemOptions)
+                .HasForeignKey(x => x.CartItemId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.ProductItemOption).WithMany(x => x.CartItemOptions)
+                .HasForeignKey(x => x.ProductItemOptionId).OnDelete(DeleteBehavior.NoAction);
         });
+
+        // ── CartItemStatusHistory ─────────────────────────────────────────────
+        builder.Entity<CartItemStatusHistory>(e =>
+        {
+            e.HasOne(x => x.CartItem).WithMany(x => x.CartItemStatusHistories)
+                .HasForeignKey(x => x.CartItemId).OnDelete(DeleteBehavior.NoAction)
+                .IsRequired(false);  // Optional để tránh filter warning
+        });
+        // Thêm query filter cho CartItemStatusHistory để khớp với CartItem
+        builder.Entity<CartItemStatusHistory>().HasQueryFilter(x => !x.IsDeleted);
 
         // ── Bill ─────────────────────────────────────────────────────────────
         builder.Entity<Bill>(e =>
@@ -229,6 +247,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.UnitPrice).HasColumnType("decimal(18,2)");
             e.Property(x => x.LineTotal).HasColumnType("decimal(18,2)");
             e.HasIndex(x => x.CartItemId).IsUnique().HasFilter("[IsDeleted] = 0");
+            // Tránh cascade cycle: Bill→Cart→CartItems và BillDetails→CartItems
+            e.HasOne(x => x.CartItem).WithOne(x => x.BillDetail)
+                .HasForeignKey<BillDetail>(x => x.CartItemId)
+                .OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.Bill).WithMany(x => x.BillDetails)
+                .HasForeignKey(x => x.BillId)
+                .OnDelete(DeleteBehavior.NoAction);
         });
 
         // ── PaymentMethod ────────────────────────────────────────────────────
@@ -246,6 +271,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, 
             e.Property(x => x.ReferenceNo).HasMaxLength(100);
             e.HasOne(x => x.Cashier).WithMany(x => x.Payments)
                 .HasForeignKey(x => x.CashierId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Bill).WithMany(x => x.Payments)
+                .HasForeignKey(x => x.BillId).OnDelete(DeleteBehavior.NoAction);
         });
 
         // ── AuditLog ─────────────────────────────────────────────────────────

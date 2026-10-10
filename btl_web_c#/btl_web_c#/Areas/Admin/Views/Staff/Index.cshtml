@@ -1,0 +1,108 @@
+@model IEnumerable<RestaurantOrdering.ViewModels.Admin.StaffViewModel>
+@{
+    ViewData["Title"] = "Nhân viên";
+    ViewData["Breadcrumb"] = "Nhân viên";
+    int page = (int)ViewBag.Page;
+}
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="fw-bold mb-0"><i class="bi bi-people me-2 text-primary"></i>Nhân viên</h4>
+    <button class="btn btn-primary" onclick="openForm(0)"><i class="bi bi-plus-lg me-1"></i>Thêm nhân viên</button>
+</div>
+<form method="get" class="mb-3">
+    <div class="input-group" style="max-width:380px">
+        <input type="text" name="q" value="@ViewBag.Q" class="form-control" placeholder="Tìm tên/username..."/>
+        <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i></button>
+        @if(!string.IsNullOrEmpty(ViewBag.Q as string)){<a href="/Admin/Staff" class="btn btn-outline-danger"><i class="bi bi-x"></i></a>}
+    </div>
+</form>
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr><th>Tên đăng nhập</th><th>Họ tên</th><th>SĐT</th><th>Vai trò</th><th>Đăng nhập lần cuối</th><th class="text-center">Trạng thái</th><th class="text-end">Thao tác</th></tr>
+            </thead>
+            <tbody>
+                @foreach(var s in Model){
+                    var roleColor = s.Role switch { "Admin"=>"danger","Waiter"=>"primary","Kitchen"=>"warning","Cashier"=>"success",_=>"secondary" };
+                    <tr>
+                        <td class="fw-medium">@s.UserName</td>
+                        <td>@s.FullName</td>
+                        <td class="text-muted small">@(s.Phone??"-")</td>
+                        <td><span class="badge bg-@roleColor">@s.Role</span></td>
+                        <td class="text-muted small">@(s.LastLoginTime?.ToLocalTime().ToString("dd/MM/yyyy HH:mm")??"-")</td>
+                        <td class="text-center">
+                            @if(s.IsLockedOut){<span class="badge bg-danger">Bị khóa</span>}
+                            else if(!s.IsActive){<span class="badge bg-secondary">Vô hiệu</span>}
+                            else{<span class="badge bg-success">Hoạt động</span>}
+                        </td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-outline-primary me-1" onclick="openForm(@s.Id)" title="Sửa"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-warning me-1" onclick="openResetPwd(@s.Id)" title="Đặt lại MK"><i class="bi bi-key"></i></button>
+                            @if(s.IsLockedOut){<button class="btn btn-sm btn-outline-info me-1" onclick="unlockUser(@s.Id)" title="Mở khóa"><i class="bi bi-unlock"></i></button>}
+                            <button class="btn btn-sm @(s.IsActive?"btn-outline-secondary":"btn-outline-success") me-1"
+                                    onclick="toggleActive(@s.Id,this)"
+                                    title="@(s.IsActive?"Vô hiệu hóa":"Kích hoạt")">
+                                <i class="bi @(s.IsActive?"bi-person-dash":"bi-person-check")"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(@s.Id,'@s.FullName')" title="Xóa"><i class="bi bi-trash"></i></button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="form-modal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content" id="form-modal-content"></div></div></div>
+<div class="modal fade" id="pwd-modal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content" id="pwd-modal-content"></div></div></div>
+
+@section Scripts {
+<script>
+    const _af=document.querySelector('input[name="__RequestVerificationToken"]')?.value??'';
+    function openForm(id){
+        fetch(`/Admin/Staff/Form?id=${id}`,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.text()).then(html=>{
+            document.getElementById('form-modal-content').innerHTML=html;new bootstrap.Modal(document.getElementById('form-modal')).show();$.validator.unobtrusive.parse('#staff-form');
+        });
+    }
+    function submitForm(form){
+        const fd=new FormData(form);
+        fetch(form.action,{method:'POST',body:fd}).then(r=>r.json()).then(data=>{
+            if(data.success){bootstrap.Modal.getInstance(document.getElementById('form-modal'))?.hide();showToast(data.message,'success');setTimeout(()=>location.reload(),800);}
+            else{showToast(data.message||'Có lỗi','danger');}
+        });return false;
+    }
+    function openResetPwd(id){
+        fetch(`/Admin/Staff/ResetPasswordForm?id=${id}`,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.text()).then(html=>{
+            document.getElementById('pwd-modal-content').innerHTML=html;new bootstrap.Modal(document.getElementById('pwd-modal')).show();
+        });
+    }
+    function submitPwd(form){
+        const fd=new FormData(form);
+        fetch(form.action,{method:'POST',body:fd}).then(r=>r.json()).then(data=>{
+            if(data.success){bootstrap.Modal.getInstance(document.getElementById('pwd-modal'))?.hide();showToast(data.message,'success');}
+            else{showToast(data.message||'Có lỗi','danger');}
+        });return false;
+    }
+    function toggleActive(id,btn){
+        const fd=new FormData();fd.append('id',id);fd.append('__RequestVerificationToken',_af);
+        fetch('/Admin/Staff/ToggleActive',{method:'POST',body:fd}).then(r=>r.json()).then(data=>{
+            if(data.success){showToast(data.isActive?'Đã kích hoạt':'Đã vô hiệu hóa','info');setTimeout(()=>location.reload(),800);}
+            else{showToast(data.message,'danger');}
+        });
+    }
+    function unlockUser(id){
+        const fd=new FormData();fd.append('id',id);fd.append('__RequestVerificationToken',_af);
+        fetch('/Admin/Staff/Unlock',{method:'POST',body:fd}).then(r=>r.json()).then(data=>{
+            showToast(data.message,data.success?'success':'danger');if(data.success)setTimeout(()=>location.reload(),800);
+        });
+    }
+    function deleteUser(id,name){
+        confirmAction(`Ẩn nhân viên "${name}"?`,()=>{
+            const fd=new FormData();fd.append('id',id);fd.append('__RequestVerificationToken',_af);
+            fetch('/Admin/Staff/Delete',{method:'POST',body:fd}).then(r=>r.json()).then(data=>{
+                showToast(data.message,data.success?'success':'danger');if(data.success)setTimeout(()=>location.reload(),800);
+            });
+        });
+    }
+</script>
+}

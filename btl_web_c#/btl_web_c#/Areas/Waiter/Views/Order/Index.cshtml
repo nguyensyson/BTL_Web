@@ -1,0 +1,695 @@
+@using RestaurantOrdering.Models.Entities
+@using RestaurantOrdering.ViewModels.Waiter
+@{
+    var table   = ViewBag.Table as DiningTable;
+    var cart    = ViewBag.Cart as Cart;
+    var categories = ViewBag.Categories as List<Category> ?? new();
+    var optionsMap = ViewBag.OptionsMap as Dictionary<int, List<ProductItemOption>> ?? new();
+    var draftItems = ViewBag.DraftItems as List<CartDraftItem> ?? new();
+    var byRound    = ViewBag.SentByRound as IEnumerable<IGrouping<int, CartItem>> ?? [];
+    var draftTotal = draftItems.Sum(i => i.TotalPrice);
+
+    ViewData["Title"] = $"Bàn {table?.Code}";
+
+    // Màu trạng thái món
+    var statusCss = new Dictionary<byte, string> {
+        {1,"badge-draft"},{2,"badge-confirmed"},{3,"badge-cooking"},
+        {4,"badge-ready"},{5,"badge-served"},{6,"badge-cancelled"},{7,"badge-rejected"}
+    };
+    var statusLabel = new Dictionary<byte, string> {
+        {1,"Nháp"},{2,"⏳ Chờ làm"},{3,"🍳 Đang làm"},{4,"✅ Đã xong"},{5,"🚀 Đã phục vụ"},{6,"❌ Đã hủy"},{7,"🚫 Bếp từ chối"}
+    };
+}
+
+<!-- Header bàn -->
+<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+        <a href="/Waiter/Tables" class="btn btn-sm btn-outline-secondary me-2">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <span class="fw-bold fs-5">Bàn @table?.Code</span>
+        <span class="badge ms-2" style="background:@table?.TableStatus?.ColorHex">@table?.TableStatus?.Name</span>
+        <span class="text-muted small ms-2">@table?.Area?.Name · @cart?.GuestCount khách</span>
+        <span class="text-muted small ms-2">
+            ⏱ <span id="table-timer" data-opened="@cart?.OpenedTime.ToString("o")"></span>
+        </span>
+    </div>
+    <div class="d-flex gap-2">
+        @if (table?.StatusId == 2) // OCCUPIED
+        {
+            <button class="btn btn-sm btn-outline-warning"
+                    onclick="requestPayment(@table!.Id)">
+                <i class="bi bi-credit-card me-1"></i>Yêu cầu thanh toán
+            </button>
+        }
+    </div>
+</div>
+
+<!-- Layout 2 cột -->
+<div class="row g-3">
+
+    <!-- Cột trái: Menu -->
+    <div class="col-lg-7">
+        <!-- Tìm kiếm -->
+        <div class="input-group mb-3">
+            <span class="input-group-text bg-light"><i class="bi bi-search text-muted"></i></span>
+            <input type="text" id="menu-search" class="form-control"
+                   placeholder="Tìm tên món..." oninput="filterMenu(this.value)" />
+        </div>
+
+        <!-- Tab danh mục -->
+        <ul class="nav nav-pills mb-3 flex-nowrap overflow-auto" style="scrollbar-width:none" id="cat-tabs">
+            <li class="nav-item">
+                <button class="nav-link active me-1" onclick="filterCategory(0, this)">Tất cả</button>
+            </li>
+            @foreach (var cat in categories)
+            {
+                <li class="nav-item">
+                    <button class="nav-link me-1" onclick="filterCategory(@cat.Id, this)">@cat.Name</button>
+                </li>
+            }
+        </ul>
+
+        <!-- Lưới món -->
+        <div class="row g-2" id="product-grid">
+            @foreach (var cat in categories)
+            {
+                foreach (var p in cat.Products.OrderBy(x => x.SortOrder))
+                {
+                    var opts = optionsMap.GetValueOrDefault(p.Id, new());
+                    <div class="col-6 col-md-4 product-item" data-cat="@cat.Id" data-name="@p.Name.ToLower()">
+                        <div class="card h-100 @(!p.IsAvailable ? "opacity-50" : "")"
+                             style="cursor:@(p.IsAvailable ? "pointer" : "default")"
+                             onclick="@(p.IsAvailable ? $"openAddModal({p.Id})" : "")">
+                            @if (!string.IsNullOrEmpty(p.ImageUrl))
+                            {
+                                <img src="@p.ImageUrl" class="card-img-top"
+                                     style="height:90px;object-fit:cover" alt="@p.Name" />
+                            }
+                            <div class="card-body p-2">
+                                <div class="small fw-semibold lh-sm">@p.Name</div>
+                                <div class="text-primary small fw-bold mt-1">@p.Price.ToString("N0") ₫</div>
+                                @if (!p.IsAvailable)
+                                {
+                                    <span class="badge bg-secondary small">Hết hàng</span>
+                                }
+                            </div>
+                        </div>
+                        <!-- Data cho JS -->
+                        <div class="d-none product-data" data-id="@p.Id"
+                             data-name="@p.Name" data-price="@p.Price">
+                            @if (opts.Any())
+                            {
+                                <div class="options-data">
+                                    @foreach (var grp in opts.GroupBy(o => o.GroupName ?? "Tùy chọn"))
+                                    {
+                                        <div data-group="@grp.Key">
+                                            @foreach (var o in grp)
+                                            {
+                                                <div data-id="@o.Id" data-name="@o.Name" data-extra="@o.ExtraPrice"></div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <!-- Cột phải: Giỏ hàng + Đã gửi -->
+    <div class="col-lg-5">
+
+        <!-- Giỏ nháp -->
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+                <span class="fw-semibold"><i class="bi bi-cart3 me-1"></i>Giỏ chưa gửi
+                    <span class="badge bg-primary ms-1" id="draft-count">@draftItems.Count</span>
+                </span>
+                <button class="btn btn-primary btn-sm" id="submit-btn"
+                        onclick="submitOrder(@table!.Id)"
+                        @(draftItems.Any() ? "" : "disabled")>
+                    <i class="bi bi-send me-1"></i>Gửi bếp
+                </button>
+            </div>
+            <div id="cart-summary-body" style="max-height:260px;overflow-y:auto">
+                @await Html.PartialAsync("_CartSummary", null, new Microsoft.AspNetCore.Mvc.ViewFeatures.ViewDataDictionary(ViewData) {
+                    ["DraftItems"] = draftItems,
+                    ["TableId"] = table!.Id
+                })
+            </div>
+        </div>
+
+        <!-- Các đợt đã gửi -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+                <span class="fw-semibold"><i class="bi bi-list-check me-1"></i>Đã gửi bếp</span>
+                <button class="btn btn-sm btn-outline-secondary" onclick="reloadSentRounds(@table!.Id)">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+            </div>
+            <div id="sent-rounds-body" style="max-height:360px;overflow-y:auto">
+                @if (!byRound.Any())
+                {
+                    <div class="text-center text-muted py-3 small">Chưa có đợt nào</div>
+                }
+                @foreach (var round in byRound)
+                {
+                    <div class="px-3 py-2 border-bottom">
+                        <div class="text-muted small fw-semibold mb-1">Đợt @round.Key</div>
+                        @foreach (var ci in round)
+                        {
+                            var statusClass = statusCss.GetValueOrDefault(ci.StatusId, "badge-secondary");
+                            var statusName = statusLabel.GetValueOrDefault(ci.StatusId, "?");
+                            <div class="d-flex align-items-start justify-content-between py-1 border-bottom">
+                                <div class="flex-grow-1 me-2">
+                                    <div class="small @(ci.StatusId == 6 ? "text-decoration-line-through text-muted" : "fw-medium")">
+                                        @ci.ProductName × @ci.Quantity
+                                        @if (ci.IsEdited) { <span class="badge bg-info ms-1 small">Đã sửa</span> }
+                                    </div>
+                                    @if (ci.CartItemOptions.Any())
+                                    {
+                                        <div class="text-muted" style="font-size:.72rem">
+                                            @string.Join(", ", ci.CartItemOptions.Select(o => o.OptionName))
+                                        </div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(ci.Note))
+                                    {
+                                        <div class="text-muted" style="font-size:.72rem">📝 @ci.Note</div>
+                                    }
+                                    @if (ci.StatusId == 6 && !string.IsNullOrEmpty(ci.CancelReason))
+                                    {
+                                        <div class="text-danger" style="font-size:.72rem">Lý do: @ci.CancelReason</div>
+                                    }
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge @statusClass small">@statusName</span>
+                    @if (ci.StatusId == 4) // READY
+                                    {
+                                        <br />
+                                        <button class="btn btn-sm btn-success mt-1 py-0 px-2"
+                                                onclick="markServed(@ci.Id, this)"
+                                                style="font-size:.72rem">
+                                            Đã phục vụ
+                                        </button>
+                                    }
+                                    @if (ci.StatusId == 2) // CONFIRMED — cho hủy/sửa
+                                    {
+                                        <br />
+                                        <button class="btn btn-sm btn-outline-warning mt-1 py-0 px-1"
+                                                style="font-size:.7rem"
+                                                onclick="openEditModal(@ci.Id, @ci.Quantity, '@(ci.Note?.Replace("'","\\'")??"")' )">
+                                            ✏
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger mt-1 py-0 px-1"
+                                                style="font-size:.7rem"
+                                                onclick="openCancelModal(@ci.Id, '@ci.ProductName.Replace("'","\\'")')">
+                                            ✕
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal hủy món -->
+<div class="modal fade" id="cancel-item-modal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content rounded-3">
+            <div class="modal-header border-0 pb-0">
+                <h6 class="modal-title fw-semibold text-danger">
+                    <i class="bi bi-x-circle me-1"></i>Hủy món
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body pt-1">
+                <p class="small mb-2">
+                    Hủy món: <strong id="cancel-item-name"></strong>?
+                </p>
+                <label class="form-label small fw-medium">Lý do hủy <span class="text-danger">*</span></label>
+                <input type="text" id="cancel-reason-input" class="form-control form-control-sm"
+                       placeholder="VD: Khách đổi ý, nhầm món..." />
+                <div id="cancel-error" class="text-danger small mt-1 d-none"></div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Thôi</button>
+                <button type="button" class="btn btn-sm btn-danger" onclick="submitCancel()">Xác nhận hủy</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal sửa món -->
+<div class="modal fade" id="edit-item-modal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content rounded-3">
+            <div class="modal-header border-0 pb-0">
+                <h6 class="modal-title fw-semibold">
+                    <i class="bi bi-pencil me-1"></i>Sửa món
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body pt-1">
+                <div class="mb-2">
+                    <label class="form-label small fw-medium">Số lượng</label>
+                    <div class="input-group input-group-sm" style="max-width:120px">
+                        <button class="btn btn-outline-secondary" type="button"
+                                onclick="document.getElementById('edit-qty-input').value=Math.max(1,parseInt(document.getElementById('edit-qty-input').value)-1)">−</button>
+                        <input type="number" id="edit-qty-input" class="form-control text-center" min="1" max="99" value="1"/>
+                        <button class="btn btn-outline-secondary" type="button"
+                                onclick="document.getElementById('edit-qty-input').value=Math.min(99,parseInt(document.getElementById('edit-qty-input').value)+1)">+</button>
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small fw-medium">Ghi chú</label>
+                    <input type="text" id="edit-note-input" class="form-control form-control-sm"
+                           placeholder="Ghi chú cho bếp..."/>
+                </div>
+                <div id="edit-error" class="text-danger small d-none"></div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-sm btn-primary" onclick="submitEdit()">
+                    <i class="bi bi-check-lg me-1"></i>Lưu
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal thêm món -->
+<div class="modal fade" id="add-item-modal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" id="add-item-modal-content">
+            <!-- Nội dung sinh động bằng JS -->
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+const _af = document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
+const TABLE_ID = @table!.Id;
+
+/* ── Timer bàn ──────────────────────────────────────────── */
+(function() {
+    const el = document.getElementById('table-timer');
+    if (!el) return;
+    const opened = new Date(el.dataset.opened);
+    setInterval(() => {
+        const diff = Math.floor((Date.now() - opened) / 1000);
+        const h = Math.floor(diff / 3600);
+        const m = Math.floor((diff % 3600) / 60);
+        const s = diff % 60;
+        el.textContent = h > 0
+            ? `${h}h${String(m).padStart(2,'0')}p`
+            : `${m}p${String(s).padStart(2,'0')}s`;
+    }, 1000);
+})();
+
+/* ── Lọc menu ────────────────────────────────────────────── */
+function filterCategory(catId, btn) {
+    document.querySelectorAll('#cat-tabs .nav-link').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.product-item').forEach(el => {
+        el.style.display = (catId === 0 || el.dataset.cat == catId) ? '' : 'none';
+    });
+}
+function filterMenu(q) {
+    const s = q.toLowerCase();
+    document.querySelectorAll('.product-item').forEach(el => {
+        el.style.display = el.dataset.name.includes(s) ? '' : 'none';
+    });
+}
+
+/* ── Modal thêm món ─────────────────────────────────────── */
+function openAddModal(productId) {
+    const data = document.querySelector(`.product-data[data-id="${productId}"]`);
+    if (!data) return;
+    const name  = data.dataset.name;
+    const price = parseFloat(data.dataset.price);
+    const optsDom = data.querySelectorAll('.options-data [data-group]');
+
+    let optHtml = '';
+    optsDom.forEach(grpEl => {
+        const grpName = grpEl.dataset.group;
+        optHtml += `<div class="mb-2"><div class="fw-medium small mb-1">${grpName}</div>`;
+        grpEl.querySelectorAll('[data-id]').forEach(o => {
+            const extra = parseFloat(o.dataset.extra);
+            const label = extra > 0 ? `${o.dataset.name} (+${extra.toLocaleString('vi-VN')} ₫)` : o.dataset.name;
+            optHtml += `<div class="form-check form-check-inline">
+                <input class="form-check-input opt-check" type="checkbox"
+                       id="opt${o.dataset.id}" value="${o.dataset.id}"
+                       data-extra="${extra}" data-name="${o.dataset.name}"
+                       onchange="recalcTotal(${price})">
+                <label class="form-check-label small" for="opt${o.dataset.id}">${label}</label>
+            </div>`;
+        });
+        optHtml += '</div>';
+    });
+
+    document.getElementById('add-item-modal-content').innerHTML = `
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-semibold">${name}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        ${optHtml}
+        <div class="mb-3">
+          <label class="form-label fw-medium small">Số lượng</label>
+          <div class="input-group input-group-sm" style="max-width:120px">
+            <button class="btn btn-outline-secondary" type="button" onclick="changeQty(-1,${price})">−</button>
+            <input type="number" id="modal-qty" class="form-control text-center" value="1" min="1" max="99"
+                   oninput="recalcTotal(${price})">
+            <button class="btn btn-outline-secondary" type="button" onclick="changeQty(1,${price})">+</button>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-medium small">Ghi chú cho bếp</label>
+          <input type="text" id="modal-note" class="form-control form-control-sm" placeholder="VD: ít cay, không hành...">
+        </div>
+        <div class="fw-semibold text-primary">
+          Thành tiền: <span id="modal-total">${price.toLocaleString('vi-VN')} ₫</span>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+        <button type="button" class="btn btn-primary" onclick="addToCart(${productId}, ${price})">
+          <i class="bi bi-cart-plus me-1"></i>Thêm vào giỏ
+        </button>
+      </div>`;
+
+    new bootstrap.Modal(document.getElementById('add-item-modal')).show();
+    recalcTotal(price);
+}
+
+function changeQty(delta, basePrice) {
+    const inp = document.getElementById('modal-qty');
+    inp.value = Math.max(1, Math.min(99, parseInt(inp.value) + delta));
+    recalcTotal(basePrice);
+}
+function recalcTotal(basePrice) {
+    const qty = parseInt(document.getElementById('modal-qty')?.value ?? 1);
+    let extra = 0;
+    document.querySelectorAll('.opt-check:checked').forEach(c => extra += parseFloat(c.dataset.extra));
+    document.getElementById('modal-total').textContent =
+        ((basePrice + extra) * qty).toLocaleString('vi-VN') + ' ₫';
+}
+
+function addToCart(productId, basePrice) {
+    const qty = parseInt(document.getElementById('modal-qty').value);
+    const note = document.getElementById('modal-note').value.trim();
+    const opts = [...document.querySelectorAll('.opt-check:checked')].map(c => parseInt(c.value));
+
+    fetch('/Waiter/Order/AddToCart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': _af },
+        body: JSON.stringify({ tableId: TABLE_ID, productId, quantity: qty, note, optionIds: opts })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('add-item-modal'))?.hide();
+            refreshCart();
+            showToast('Đã thêm vào giỏ', 'success', 2000);
+        } else {
+            showToast(data.message, 'danger');
+        }
+    });
+}
+
+/* ── Giỏ nháp ───────────────────────────────────────────── */
+function refreshCart() {
+    fetch(`/Waiter/Order/CartSummary?tableId=${TABLE_ID}`)
+    .then(r => r.text())
+    .then(html => {
+        document.getElementById('cart-summary-body').innerHTML = html;
+        const countEl = document.querySelector('#draft-count');
+        const items = document.querySelectorAll('#cart-summary-body .list-group-item');
+        if (countEl) countEl.textContent = items.length;
+        document.getElementById('submit-btn').disabled = items.length === 0;
+    });
+}
+
+function changeDraftQty(localId, newQty, tableId) {
+    if (newQty < 1) { removeDraftItem(localId, tableId); return; }
+    fetch('/Waiter/Order/UpdateDraftItem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': _af },
+        body: JSON.stringify({ tableId, localId, quantity: newQty, note: null })
+    }).then(() => refreshCart());
+}
+
+function removeDraftItem(localId, tableId) {
+    fetch('/Waiter/Order/RemoveDraftItem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': _af },
+        body: JSON.stringify({ tableId, localId })
+    }).then(() => refreshCart());
+}
+
+/* ── Gửi bếp ────────────────────────────────────────────── */
+function submitOrder(tableId) {
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang gửi...';
+
+    const fd = new FormData();
+    fd.append('tableId', tableId);
+    fd.append('__RequestVerificationToken', _af);
+
+    fetch('/Waiter/Order/Submit', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        btn.innerHTML = '<i class="bi bi-send me-1"></i>Gửi bếp';
+        if (data.success) {
+            showToast(data.message, 'success');
+            refreshCart();
+            setTimeout(() => reloadSentRounds(tableId), 500);
+        } else {
+            btn.disabled = false;
+            showToast(data.message, 'danger');
+        }
+    })
+    .catch(() => { btn.disabled = false; btn.innerHTML = '<i class="bi bi-send me-1"></i>Gửi bếp'; });
+}
+
+/* ── Đã phục vụ ─────────────────────────────────────────── */
+function markServed(cartItemId, btn) {
+    btn.disabled = true;
+    const fd = new FormData();
+    fd.append('cartItemId', cartItemId);
+    fd.append('__RequestVerificationToken', _af);
+    fetch('/Waiter/Order/MarkServed', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Đã đánh dấu phục vụ', 'success', 2000);
+            reloadSentRounds(TABLE_ID);
+        } else {
+            btn.disabled = false;
+            showToast(data.message, 'warning');
+        }
+    });
+}
+
+/* ── Reload đợt đã gửi ──────────────────────────────────── */
+function reloadSentRounds(tableId) {
+    fetch(`/Waiter/Order/GetSentRounds?tableId=${tableId}`)
+    .then(r => r.json())
+    .then(rounds => {
+        const container = document.getElementById('sent-rounds-body');
+        if (!rounds.length) { container.innerHTML = '<div class="text-center text-muted py-3 small">Chưa có đợt nào</div>'; return; }
+
+        const statusLabel = { 1:'Nháp',2:'⏳ Chờ làm',3:'🍳 Đang làm',4:'✅ Đã xong',5:'🚀 Đã phục vụ',6:'❌ Đã hủy',7:'🚫 Bếp từ chối' };
+        const statusCss   = { 1:'badge-draft',2:'badge-confirmed',3:'badge-cooking',4:'badge-ready',5:'badge-served',6:'badge-cancelled',7:'badge-rejected' };
+
+        container.innerHTML = rounds.map(round => `
+          <div class="px-3 py-2 border-bottom">
+            <div class="text-muted small fw-semibold mb-1">Đợt ${round.roundNo}</div>
+            ${round.items.map(ci => `
+              <div class="d-flex align-items-start justify-content-between py-1 border-bottom">
+                <div class="flex-grow-1 me-2">
+                  <div class="small ${ci.statusId == 6 ? 'text-decoration-line-through text-muted' : 'fw-medium'}">
+                    ${ci.productName} × ${ci.quantity}
+                    ${ci.isEdited ? '<span class="badge bg-info ms-1 small">Đã sửa</span>' : ''}
+                  </div>
+                  ${ci.options.length ? `<div class="text-muted" style="font-size:.72rem">${ci.options.join(', ')}</div>` : ''}
+                  ${ci.note ? `<div class="text-muted" style="font-size:.72rem">📝 ${ci.note}</div>` : ''}
+                  ${ci.statusId == 6 && ci.cancelReason ? `<div class="text-danger" style="font-size:.72rem">Lý do: ${ci.cancelReason}</div>` : ''}
+                </div>
+                <div class="text-end">
+                  <span class="badge ${statusCss[ci.statusId] || ''} small">${statusLabel[ci.statusId] || '?'}</span>
+                  ${ci.statusId === 4 ? `<br><button class="btn btn-sm btn-success mt-1 py-0 px-2" onclick="markServed(${ci.id},this)" style="font-size:.72rem">Đã phục vụ</button>` : ''}
+                  ${ci.statusId === 2 ? `
+                    <br>
+                    <button class="btn btn-sm btn-outline-warning mt-1 py-0 px-1" style="font-size:.7rem"
+                            onclick="openEditModal(${ci.id}, ${ci.quantity}, '${(ci.note??'').replace(/'/g,"\\'")}')">✏</button>
+                    <button class="btn btn-sm btn-outline-danger mt-1 py-0 px-1" style="font-size:.7rem"
+                            onclick="openCancelModal(${ci.id}, '${ci.productName.replace(/'/g,"\\'")}')">✕</button>
+                  ` : ''}
+                </div>
+              </div>`).join('')}
+          </div>`).join('');
+    });
+}
+
+/* ── Yêu cầu thanh toán ─────────────────────────────────── */
+function requestPayment(tableId) {
+    confirmAction('Yêu cầu thanh toán cho bàn này?', () => {
+        const fd = new FormData();
+        fd.append('tableId', tableId);
+        fd.append('__RequestVerificationToken', _af);
+        fetch('/Waiter/Order/RequestPayment', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            showToast(data.message, data.success ? 'success' : 'danger');
+            if (data.success) setTimeout(() => window.location.href = '/Waiter/Tables', 1200);
+        });
+    });
+}
+
+/* ── Hủy món (ORD-02) ───────────────────────────────────────── */
+let _cancelItemId = 0;
+function openCancelModal(cartItemId, productName) {
+    _cancelItemId = cartItemId;
+    document.getElementById('cancel-item-name').textContent = productName;
+    document.getElementById('cancel-reason-input').value = '';
+    document.getElementById('cancel-error').classList.add('d-none');
+    new bootstrap.Modal(document.getElementById('cancel-item-modal')).show();
+}
+function submitCancel() {
+    const reason = document.getElementById('cancel-reason-input').value.trim();
+    if (!reason) {
+        document.getElementById('cancel-error').textContent = 'Vui lòng nhập lý do hủy.';
+        document.getElementById('cancel-error').classList.remove('d-none');
+        return;
+    }
+    fetch('/Waiter/Order/CancelItem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': _af },
+        body: JSON.stringify({ cartItemId: _cancelItemId, reason })
+    })
+    .then(r => r.json())
+    .then(data => {
+        bootstrap.Modal.getInstance(document.getElementById('cancel-item-modal'))?.hide();
+        if (data.success) {
+            showToast(data.message, 'success');
+            reloadSentRounds(TABLE_ID);
+        } else if (data.conflict) {
+            showToast(data.message, 'warning', 0);
+            reloadSentRounds(TABLE_ID);
+        } else {
+            showToast(data.message, 'danger');
+        }
+    });
+}
+
+/* ── Sửa món (ORD-03) ───────────────────────────────────────── */
+let _editItemId = 0;
+function openEditModal(cartItemId, currentQty, currentNote) {
+    _editItemId = cartItemId;
+    document.getElementById('edit-qty-input').value = currentQty;
+    document.getElementById('edit-note-input').value = currentNote ?? '';
+    document.getElementById('edit-error').classList.add('d-none');
+    new bootstrap.Modal(document.getElementById('edit-item-modal')).show();
+}
+function submitEdit() {
+    const qty = parseInt(document.getElementById('edit-qty-input').value);
+    const note = document.getElementById('edit-note-input').value.trim();
+    if (isNaN(qty) || qty < 1) {
+        document.getElementById('edit-error').textContent = 'Số lượng phải ít nhất 1.';
+        document.getElementById('edit-error').classList.remove('d-none');
+        return;
+    }
+    fetch('/Waiter/Order/EditItem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': _af },
+        body: JSON.stringify({ cartItemId: _editItemId, quantity: qty, note })
+    })
+    .then(r => r.json())
+    .then(data => {
+        bootstrap.Modal.getInstance(document.getElementById('edit-item-modal'))?.hide();
+        if (data.success) {
+            showToast(data.message, 'success');
+            reloadSentRounds(TABLE_ID);
+        } else if (data.conflict) {
+            showToast(data.message, 'warning', 0);
+            reloadSentRounds(TABLE_ID);
+        } else {
+            showToast(data.message, 'danger');
+        }
+    });
+}
+
+/* ── SignalR realtime (nhận trạng thái từ bếp) ────────────── */
+function initWaiterSignalR() {    const conn = new signalR.HubConnectionBuilder()
+        .withUrl("/hubs/kitchen")
+        .withAutomaticReconnect([0, 2000, 5000, 10000])
+        .build();
+
+    conn.on("ItemStatusChanged", () => {
+        reloadSentRounds(TABLE_ID);
+    });
+
+    conn.on("ItemReady", item => {
+        reloadSentRounds(TABLE_ID);
+        showToast(`✅ ${item.productName} đã xong! Bàn ${item.tableCode ?? TABLE_ID}`, 'success', 6000);
+    });
+
+    conn.on("ItemRejected", item => {
+        reloadSentRounds(TABLE_ID);
+        showToast(`🚫 Bếp từ chối: ${item.productName}${item.cancelReason ? ' — ' + item.cancelReason : ''}`, 'danger', 0);
+    });
+
+    conn.on("MenuItemAvailabilityChanged", ({ productId, isAvailable, productName }) => {
+        const item = document.querySelector(`.product-item[data-name]`);
+        document.querySelectorAll(`.product-data[data-id="${productId}"]`).forEach(el => {
+            const card = el.closest('.product-item')?.querySelector('.card');
+            if (card) card.classList.toggle('opacity-50', !isAvailable);
+        });
+        if (!isAvailable) showToast(`"${productName}" vừa hết hàng`, 'warning', 5000);
+    });
+
+    const banner = document.getElementById('connection-banner');
+    const bannerText = document.getElementById('connection-banner-text');
+    const reloadBtn = document.getElementById('connection-reload-btn');
+
+    conn.onreconnecting(() => {
+        if (banner) { banner.className = 'reconnecting'; bannerText.textContent = 'Mất kết nối, đang kết nối lại...'; }
+        // Vô hiệu nút gửi bếp khi mất kết nối
+        const btn = document.getElementById('submit-btn');
+        if (btn) btn.disabled = true;
+    });
+    conn.onreconnected(() => {
+        if (banner) {
+            banner.className = 'reconnected';
+            bannerText.textContent = 'Đã kết nối lại';
+            setTimeout(() => { banner.className = ''; }, 3000);
+        }
+        const btn = document.getElementById('submit-btn');
+        if (btn) btn.disabled = false;
+        reloadSentRounds(TABLE_ID);
+    });
+    conn.onclose(() => {
+        if (banner) {
+            banner.className = 'disconnected';
+            bannerText.textContent = 'Mất kết nối. Vui lòng tải lại trang.';
+            if (reloadBtn) reloadBtn.style.display = 'inline-block';
+        }
+    });
+
+    conn.start().catch(err => console.warn('SignalR connect error:', err));
+}
+</script>
+}
+<!-- Load SignalR CDN CUỐI CÙNG, sau đó gọi init -->
+<script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.0/dist/browser/signalr.min.js"
+        onload="initWaiterSignalR()"></script>

@@ -1,0 +1,63 @@
+@model RestaurantOrdering.ViewModels.Admin.StaffViewModel
+<form id="staff-form" asp-area="Admin" asp-controller="Staff" asp-action="Save" method="post" onsubmit="return submitForm(this)">
+    <div class="modal-header">
+        <h5 class="modal-title fw-semibold">@(Model.Id==0?"Thêm nhân viên":"Sửa nhân viên")</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body">
+        <input type="hidden" asp-for="Id"/>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label asp-for="UserName" class="form-label fw-medium"></label>
+                @if(Model.Id != 0){
+                    <input asp-for="UserName" class="form-control" readonly autofocus />
+                } else {
+                    <input asp-for="UserName" class="form-control" autofocus />
+                }
+                <span asp-validation-for="UserName" class="text-danger small"></span>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="FullName" class="form-label fw-medium"></label>
+                <input asp-for="FullName" class="form-control"/>
+                <span asp-validation-for="FullName" class="text-danger small"></span>
+            </div>
+            @if(Model.Id==0){
+                <div class="col-12">
+                    <label asp-for="Password" class="form-label fw-medium"></label>
+                    <input asp-for="Password" type="password" class="form-control" placeholder="Tối thiểu 6 ký tự"/>
+                    <span asp-validation-for="Password" class="text-danger small"></span>
+                </div>
+            }
+            <div class="col-md-6">
+                <label asp-for="Phone" class="form-label fw-medium"></label>
+                <input asp-for="Phone" class="form-control"/>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Email" class="form-label fw-medium"></label>
+                <input asp-for="Email" class="form-control" type="email"/>
+            </div>
+            <div class="col-md-6">
+                <label asp-for="Role" class="form-label fw-medium"></label>
+                <select asp-for="Role" class="form-select">
+                    <option value="">-- Chọn vai trò --</option>
+                    <option value="Admin">Admin</option>
+                    <option value="Waiter">Waiter – Phục vụ</option>
+                    <option value="Kitchen">Kitchen – Bếp</option>
+                    <option value="Cashier">Cashier – Thu ngân</option>
+                </select>
+                <span asp-validation-for="Role" class="text-danger small"></span>
+            </div>
+            <div class="col-md-6 d-flex align-items-end pb-1">
+                <div class="form-check form-switch">
+                    <input asp-for="IsActive" class="form-check-input" role="switch"/>
+                    <label asp-for="IsActive" class="form-check-label">Kích hoạt tài khoản</label>
+                </div>
+            </div>
+        </div>
+        <div asp-validation-summary="ModelOnly" class="text-danger small mt-2"></div>
+    </div>
+    <div class="modal-footer border-0">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Lưu</button>
+    </div>
+</form>

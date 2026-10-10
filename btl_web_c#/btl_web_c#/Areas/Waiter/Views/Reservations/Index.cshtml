@@ -1,0 +1,292 @@
+@using RestaurantOrdering.Models.Entities
+@model List<Reservation>
+@{
+    var targetDate = ViewBag.TargetDate as DateTime? ?? DateTime.Today;
+    var holdMinutes = ViewBag.HoldMinutes as int? ?? 20;
+    var now = DateTime.UtcNow;
+
+    var statusCss = new Dictionary<byte, string> {
+        { 0, "bg-secondary" }, { 1, "bg-success" }, { 2, "bg-danger" }, { 3, "bg-warning text-dark" }
+    };
+    var statusName = new Dictionary<byte, string> {
+        { 0, "Chờ khách" }, { 1, "Đã nhận bàn" }, { 2, "Đã hủy" }, { 3, "Quá giờ" }
+    };
+}
+
+<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <h5 class="fw-bold mb-0"><i class="bi bi-calendar-event me-2"></i>Đặt bàn</h5>
+    <button class="btn btn-primary btn-sm" onclick="showCreateModal()">
+        <i class="bi bi-plus-lg me-1"></i>Đặt bàn mới
+    </button>
+</div>
+
+<!-- Chọn ngày -->
+<div class="d-flex align-items-center gap-2 mb-3">
+    <a href="/Waiter/Reservations?date=@targetDate.AddDays(-1).ToString("yyyy-MM-dd")"
+       class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-chevron-left"></i>
+    </a>
+    <input type="date" class="form-control form-control-sm"
+           style="max-width:180px"
+           value="@targetDate.ToString("yyyy-MM-dd")"
+           onchange="location.href='/Waiter/Reservations?date='+this.value" />
+    <a href="/Waiter/Reservations?date=@targetDate.AddDays(1).ToString("yyyy-MM-dd")"
+       class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-chevron-right"></i>
+    </a>
+    <a href="/Waiter/Reservations" class="btn btn-sm btn-outline-primary">Hôm nay</a>
+</div>
+
+@if (!Model.Any())
+{
+    <div class="text-center py-5 empty-state">
+        <i class="bi bi-calendar-x" style="font-size:4rem;color:#ccc"></i>
+        <h5 class="mt-3 text-secondary">Không có đặt bàn ngày này</h5>
+        <p class="text-muted">Bấm <strong>Đặt bàn mới</strong> để tạo.</p>
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-hover bg-white shadow-sm rounded">
+            <thead class="table-light">
+                <tr>
+                    <th>Giờ đến</th>
+                    <th>Tên khách</th>
+                    <th>Điện thoại</th>
+                    <th>Số khách</th>
+                    <th>Bàn</th>
+                    <th>Trạng thái</th>
+                    <th>Ghi chú</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model)
+                {
+                    var isUrgent = r.Status == 0 && r.HoldUntil.HasValue && (r.HoldUntil.Value - now).TotalMinutes <= 30;
+                    var isOverdue = r.Status == 0 && r.HoldUntil.HasValue && r.HoldUntil.Value < now;
+
+                    <tr class="@(isOverdue ? "table-danger" : isUrgent ? "table-warning" : "")">
+                        <td class="fw-semibold">
+                            @r.ArrivalTime.ToLocalTime().ToString("HH:mm")
+                            @if (isOverdue)
+                            {
+                                <span class="badge bg-danger ms-1">Quá giờ!</span>
+                            }
+                            else if (isUrgent)
+                            {
+                                <span class="badge bg-warning text-dark ms-1">Sắp đến</span>
+                            }
+                        </td>
+                        <td>@r.CustomerName</td>
+                        <td><a href="tel:@r.Phone">@r.Phone</a></td>
+                        <td>@r.GuestCount</td>
+                        <td>
+                            @string.Join(", ", r.ReservationTables.Select(rt => rt.DiningTable?.Code ?? "?"))
+                        </td>
+                        <td>
+                            <span class="badge @statusCss.GetValueOrDefault(r.Status, "bg-secondary")">
+                                @statusName.GetValueOrDefault(r.Status, "?")
+                            </span>
+                        </td>
+                        <td class="small text-muted">@r.Note</td>
+                        <td>
+                            @if (r.Status == 0)
+                            {
+                                <button class="btn btn-sm btn-success me-1"
+                                        onclick="seatCustomer(@r.Id)">
+                                    <i class="bi bi-check-lg"></i> Đã đến
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger"
+                                        onclick="cancelReservation(@r.Id)">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<!-- Modal tạo đặt bàn -->
+<div class="modal fade" id="create-reservation-modal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-3">
+            <form id="create-reservation-form">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-semibold">
+                        <i class="bi bi-calendar-plus me-1"></i>Đặt bàn mới
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body pt-2">
+                    <div class="mb-2">
+                        <label class="form-label fw-medium small">Tên khách <span class="text-danger">*</span></label>
+                        <input type="text" id="res-name" class="form-control" required
+                               placeholder="VD: Nguyễn Văn A" />
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-6">
+                            <label class="form-label fw-medium small">Điện thoại <span class="text-danger">*</span></label>
+                            <input type="tel" id="res-phone" class="form-control" required
+                                   placeholder="VD: 0912 345 678" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-medium small">Số khách <span class="text-danger">*</span></label>
+                            <input type="number" id="res-guests" class="form-control" min="1" max="100" value="2" required />
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label fw-medium small">Giờ đến <span class="text-danger">*</span></label>
+                        <input type="datetime-local" id="res-time" class="form-control" required />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label fw-medium small">Chọn bàn</label>
+                        <select id="res-tables" class="form-select" multiple size="4">
+                            <option disabled>Chọn bàn phù hợp...</option>
+                        </select>
+                        <div class="form-text small">Giữ Ctrl/Cmd để chọn nhiều bàn</div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label fw-medium small">Ghi chú</label>
+                        <textarea id="res-note" class="form-control" rows="2"
+                                  placeholder="VD: khách ngồi ngoài trời..."></textarea>
+                    </div>
+                    <div id="create-res-error" class="text-danger small d-none"></div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Xác nhận đặt
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+const _af = document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
+
+// Modal tạo đặt bàn
+function showCreateModal() {
+    document.getElementById('create-reservation-form').reset();
+    document.getElementById('create-res-error').classList.add('d-none');
+
+    // Set thời gian mặc định: 30 phút sau
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + 30);
+    document.getElementById('res-time').value = now.toISOString().slice(0, 16);
+
+    loadAvailableTables();
+    new bootstrap.Modal(document.getElementById('create-reservation-modal')).show();
+}
+
+async function loadAvailableTables() {
+    const guests = parseInt(document.getElementById('res-guests').value) || 2;
+    const select = document.getElementById('res-tables');
+    select.innerHTML = '<option disabled>Đang tải...</option>';
+
+    try {
+        const res = await fetch(`/api/waiter/reservations/available-tables?guestCount=${guests}`);
+        const tables = await res.json();
+
+        select.innerHTML = '';
+        if (tables.length === 0) {
+            select.innerHTML = '<option disabled>Không có bàn trống phù hợp</option>';
+        } else {
+            tables.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t.id;
+                opt.textContent = `Bàn ${t.code} – ${t.areaName} (${t.capacity} ghế)`;
+                select.appendChild(opt);
+            });
+        }
+    } catch (err) {
+        select.innerHTML = '<option disabled>Lỗi tải bàn</option>';
+    }
+}
+
+// Load bàn khi đổi số khách
+document.getElementById('res-guests')?.addEventListener('change', loadAvailableTables);
+
+// Submit form
+document.getElementById('create-reservation-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+
+    const tableIds = [...document.getElementById('res-tables').selectedOptions].map(o => parseInt(o.value));
+
+    const body = {
+        customerName: document.getElementById('res-name').value.trim(),
+        phone: document.getElementById('res-phone').value.trim(),
+        guestCount: parseInt(document.getElementById('res-guests').value) || 2,
+        arrivalTime: new Date(document.getElementById('res-time').value).toISOString(),
+        note: document.getElementById('res-note').value.trim() || null,
+        tableIds: tableIds.length > 0 ? tableIds : null
+    };
+
+    try {
+        const res = await fetch('/api/waiter/reservations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': _af },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('create-reservation-modal'))?.hide();
+            showToast(data.message, 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            document.getElementById('create-res-error').textContent = data.message || 'Lỗi.';
+            document.getElementById('create-res-error').classList.remove('d-none');
+            btn.disabled = false;
+        }
+    } catch (err) {
+        document.getElementById('create-res-error').textContent = 'Lỗi kết nối.';
+        document.getElementById('create-res-error').classList.remove('d-none');
+        btn.disabled = false;
+    }
+});
+
+// Đã đến
+async function seatCustomer(id) {
+    confirmAction('Mở bàn cho khách này?', async () => {
+        const res = await fetch(`/api/waiter/reservations/${id}/seat`, {
+            method: 'POST',
+            headers: { 'RequestVerificationToken': _af }
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message, 'success');
+            setTimeout(() => window.location.href = `/Waiter/Order/Index/${data.tableId}`, 1000);
+        } else {
+            showToast(data.message || 'Lỗi', 'danger');
+        }
+    });
+}
+
+// Hủy đặt bàn
+async function cancelReservation(id) {
+    confirmAction('Hủy đặt bàn này?', async () => {
+        const res = await fetch(`/api/waiter/reservations/${id}/cancel`, {
+            method: 'POST',
+            headers: { 'RequestVerificationToken': _af }
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message, 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.message || 'Lỗi', 'danger');
+        }
+    });
+}
+</script>
+}

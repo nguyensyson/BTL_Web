@@ -1,0 +1,373 @@
+@using RestaurantOrdering.ViewModels.Cashier
+@model PayBillVm
+@{
+    var hasUnpaidItems = Model.Items.Any(i => i.StatusId < 5);
+}
+
+<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+        <a asp-action="Index" class="btn btn-sm btn-outline-secondary me-2">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <span class="fw-bold fs-5">@Model.TableNames</span>
+        <span class="badge bg-warning text-dark ms-2">@Model.AreaName</span>
+        <span class="text-muted small ms-2">
+            <i class="bi bi-clock"></i> @((int)(DateTime.Now - Model.OpenedTime.ToLocalTime()).TotalMinutes) phút
+        </span>
+    </div>
+    <div class="d-flex gap-2">
+        @if (Model.IsPaid)
+        {
+            <a asp-action="Print" asp-route-cartId="@Model.CartId"
+               class="btn btn-sm btn-outline-primary" target="_blank">
+                <i class="bi bi-printer me-1"></i>In hóa đơn
+            </a>
+        }
+    </div>
+</div>
+
+@if (Model.IsPaid)
+{
+    <div class="alert alert-success d-flex align-items-center">
+        <i class="bi bi-check-circle-fill me-2 fs-4"></i>
+        <div>
+            <strong>Đã thanh toán!</strong> Bill <code>@Model.BillNo</code> đã được thanh toán thành công.
+        </div>
+    </div>
+}
+
+@if (hasUnpaidItems)
+{
+    <div class="alert alert-warning d-flex align-items-center mb-3">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <div>Còn món chưa phục vụ xong. Hãy kiểm tra trước khi thanh toán.</div>
+    </div>
+}
+
+<div class="row g-3">
+    <!-- Cột trái: Hóa đơn -->
+    <div class="col-lg-7">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-white py-2">
+                <span class="fw-semibold"><i class="bi bi-receipt me-1"></i>Hóa đơn</span>
+                @if (!string.IsNullOrEmpty(Model.BillNo))
+                {
+                    <span class="badge bg-secondary ms-2">@Model.BillNo</span>
+                }
+            </div>
+            <div class="table-responsive" style="max-height:420px;overflow-y:auto">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th>Món</th>
+                            <th class="text-end">Đơn giá</th>
+                            <th class="text-center">SL</th>
+                            <th class="text-end">Thành tiền</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in Model.Items)
+                        {
+                            <tr class="@(item.StatusId == 5 ? "opacity-50" : "")">
+                                <td>
+                                    <div>@item.ProductName</div>
+                                    @if (!string.IsNullOrEmpty(item.OptionsText))
+                                    {
+                                        <div class="small text-muted">@item.OptionsText</div>
+                                    }
+                                    @if (item.StatusId < 5)
+                                    {
+                                        <span class="badge bg-warning text-dark small">@item.StatusName</span>
+                                    }
+                                </td>
+                                <td class="text-end">@item.UnitPrice.ToString("N0") ₫</td>
+                                <td class="text-center">@item.Quantity</td>
+                                <td class="text-end fw-semibold">@item.LineTotal.ToString("N0") ₫</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer bg-white">
+                <div class="d-flex justify-content-between mb-1">
+                    <span>Tạm tính</span>
+                    <span>@Model.SubTotal.ToString("N0") ₫</span>
+                </div>
+                @if (Model.ServiceFee > 0)
+                {
+                    <div class="d-flex justify-content-between mb-1 text-muted small">
+                        <span>Phí dịch vụ (@(Model.ServiceFeeRate * 100)%)</span>
+                        <span>@Model.ServiceFee.ToString("N0") ₫</span>
+                    </div>
+                }
+                <div class="d-flex justify-content-between mb-1 text-muted small">
+                    <span>Thuế VAT (@(Model.TaxRate * 100)%)</span>
+                    <span>@Model.TaxAmount.ToString("N0") ₫</span>
+                </div>
+                <hr class="my-2" />
+                <div class="d-flex justify-content-between fw-bold fs-5 text-primary">
+                    <span>TỔNG CỘNG</span>
+                    <span>@Model.TotalAmount.ToString("N0") ₫</span>
+                </div>
+                @if (Model.PaidAmount > 0)
+                {
+                    <hr class="my-2" />
+                    <div class="d-flex justify-content-between text-success">
+                        <span>Đã thanh toán</span>
+                        <span class="fw-semibold">-@Model.PaidAmount.ToString("N0") ₫</span>
+                    </div>
+                    <div class="d-flex justify-content-between text-danger fw-bold">
+                        <span>Còn lại</span>
+                        <span>@Model.RemainingAmount.ToString("N0") ₫</span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (Model.Payments.Any())
+        {
+            <div class="card shadow-sm">
+                <div class="card-header bg-white py-2">
+                    <span class="fw-semibold small"><i class="bi bi-clock-history me-1"></i>Lịch sử thanh toán</span>
+                </div>
+                <ul class="list-group list-group-flush small">
+                    @foreach (var p in Model.Payments)
+                    {
+                        <li class="list-group-item d-flex justify-content-between py-2">
+                            <div>
+                                <span class="badge bg-secondary me-1">@p.MethodName</span>
+                                @if (!string.IsNullOrEmpty(p.ReferenceNo))
+                                {
+                                    <span class="text-muted">#@p.ReferenceNo</span>
+                                }
+                                <div class="text-muted" style="font-size:.7rem">
+                                    @p.PaidTime.ToLocalTime().ToString("HH:mm dd/MM/yyyy")
+                                </div>
+                            </div>
+                            <span class="fw-semibold">@p.Amount.ToString("N0") ₫</span>
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
+    </div>
+
+    <!-- Cột phải: Thanh toán -->
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white py-2">
+                <span class="fw-semibold"><i class="bi bi-credit-card me-1"></i>Thanh toán</span>
+            </div>
+            <div class="card-body">
+                @if (Model.IsPaid)
+                {
+                    <div class="text-center py-4">
+                        <i class="bi bi-check-circle-fill text-success" style="font-size:4rem"></i>
+                        <h5 class="mt-3 text-success">Đã thanh toán!</h5>
+                        <p class="text-muted">Bill <strong>@Model.BillNo</strong></p>
+                        <a asp-action="Index" class="btn btn-outline-primary mt-2">
+                            <i class="bi bi-arrow-left me-1"></i> Quay lại danh sách
+                        </a>
+                    </div>
+                }
+                else
+                {
+                    <!-- Chọn phương thức -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small">Phương thức thanh toán</label>
+                        <div class="d-grid gap-2">
+                            <button type="button" class="btn btn-outline-primary text-start"
+                                    onclick="selectPaymentMethod(1, this)">
+                                <i class="bi bi-cash-stack me-2"></i>Tiền mặt
+                            </button>
+                            <button type="button" class="btn btn-outline-primary text-start"
+                                    onclick="selectPaymentMethod(2, this)">
+                                <i class="bi bi-bank me-2"></i>Chuyển khoản
+                            </button>
+                            <button type="button" class="btn btn-outline-primary text-start"
+                                    onclick="selectPaymentMethod(3, this)">
+                                <i class="bi bi-credit-card-2-front me-2"></i>Thẻ
+                            </button>
+                        </div>
+                    </div>
+
+                    <input type="hidden" id="selected-method" value="0" />
+
+                    <!-- Số tiền -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small">Số tiền thanh toán</label>
+                        <div class="input-group">
+                            <input type="number" id="payment-amount" class="form-control form-control-lg"
+                                   value="@((long)Math.Ceiling(Model.RemainingAmount))"
+                                   min="1" step="1000" />
+                            <span class="input-group-text">₫</span>
+                        </div>
+                        <div class="d-flex gap-2 mt-2 flex-wrap">
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    onclick="setPaymentAmount(@((long)Math.Ceiling(Model.RemainingAmount / 2) * 2))">
+                                1/2
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    onclick="setPaymentAmount(@((long)Model.RemainingAmount))">
+                                Còn lại (@(((long)Model.RemainingAmount).ToString("N0")) ₫)
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    onclick="setPaymentAmount(@((long)Math.Ceiling(Model.RemainingAmount / 50000) * 50000))">
+                                Làm tròn
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Tiền mặt: tiền khách đưa -->
+                    <div class="mb-3 d-none" id="cash-input-group">
+                        <label class="form-label fw-semibold small">Tiền khách đưa</label>
+                        <div class="input-group">
+                            <input type="number" id="cash-received" class="form-control"
+                                   min="0" step="1000" oninput="calcChange()" />
+                            <span class="input-group-text">₫</span>
+                        </div>
+                        <div class="mt-2 fw-semibold text-primary">
+                            Tiền thừa: <span id="change-amount">0 ₫</span>
+                        </div>
+                    </div>
+
+                    <!-- Chuyển khoản/thẻ: mã giao dịch -->
+                    <div class="mb-3 d-none" id="ref-input-group">
+                        <label class="form-label fw-semibold small">Mã giao dịch / Số tham chiếu</label>
+                        <input type="text" id="payment-ref" class="form-control"
+                               placeholder="VD: GD123456, REF987654..." />
+                    </div>
+
+                    <hr />
+
+                    <!-- Tổng cộng -->
+                    <div class="d-flex justify-content-between mb-3">
+                        <span class="fw-bold">Cần thanh toán</span>
+                        <span class="fw-bold text-danger fs-5" id="remaining-display">
+                            @Model.RemainingAmount.ToString("N0") ₫
+                        </span>
+                    </div>
+
+                    <!-- Nút thanh toán -->
+                    <button type="button" id="pay-btn" class="btn btn-success btn-lg w-100"
+                            onclick="processPayment()">
+                        <i class="bi bi-check-circle me-2"></i>Xác nhận thanh toán
+                    </button>
+                    <div id="payment-error" class="text-danger small mt-2 d-none"></div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+const _af = document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
+const CART_ID = @Model.CartId;
+const REMAINING = @((long)Model.RemainingAmount);
+let selectedMethod = 0;
+
+function selectPaymentMethod(id, btn) {
+    selectedMethod = id;
+    document.querySelectorAll('[onclick^="selectPaymentMethod"]').forEach(b => {
+        b.classList.remove('btn-primary');
+        b.classList.add('btn-outline-primary');
+    });
+    btn.classList.remove('btn-outline-primary');
+    btn.classList.add('btn-primary');
+    document.getElementById('selected-method').value = id;
+
+    // Hiện/ẩn input tương ứng
+    document.getElementById('cash-input-group')?.classList.toggle('d-none', id !== 1);
+    document.getElementById('ref-input-group')?.classList.toggle('d-none', id === 1);
+
+    // Auto fill cho tiền mặt
+    if (id === 1) {
+        document.getElementById('cash-received').value = document.getElementById('payment-amount').value;
+        calcChange();
+    }
+}
+
+function setPaymentAmount(amount) {
+    document.getElementById('payment-amount').value = amount;
+    if (selectedMethod === 1) calcChange();
+}
+
+function calcChange() {
+    const amount = parseInt(document.getElementById('payment-amount').value) || 0;
+    const received = parseInt(document.getElementById('cash-received').value) || 0;
+    const change = Math.max(0, received - amount);
+    document.getElementById('change-amount').textContent = change.toLocaleString('vi-VN') + ' ₫';
+}
+
+async function processPayment() {
+    if (selectedMethod === 0) {
+        showToast('Vui lòng chọn phương thức thanh toán.', 'warning');
+        return;
+    }
+    const amount = parseInt(document.getElementById('payment-amount').value) || 0;
+    if (amount <= 0) {
+        showToast('Số tiền phải lớn hơn 0.', 'warning');
+        return;
+    }
+
+    const btn = document.getElementById('pay-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Đang xử lý...';
+
+    const refNo = document.getElementById('payment-ref')?.value?.trim() || null;
+
+    try {
+        const res = await fetch(`/api/cashier/bills/${CART_ID}/pay`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'RequestVerificationToken': _af },
+            body: JSON.stringify({
+                paymentMethodId: selectedMethod,
+                amount: amount,
+                referenceNo: refNo
+            })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+            document.getElementById('payment-error').textContent = data.message || 'Lỗi server.';
+            document.getElementById('payment-error').classList.remove('d-none');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Xác nhận thanh toán';
+            return;
+        }
+
+        if (data.paid) {
+            // Thành công
+            showToast(data.message, 'success');
+            setTimeout(() => {
+                window.location.href = '/Cashier';
+            }, 2000);
+        } else {
+            // Chưa đủ
+            showToast(data.message, 'warning');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Tiếp tục thanh toán';
+            // Reload để cập nhật số dư
+            setTimeout(() => location.reload(), 1500);
+        }
+    } catch (err) {
+        console.error(err);
+        document.getElementById('payment-error').textContent = 'Lỗi kết nối.';
+        document.getElementById('payment-error').classList.remove('d-none');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check-circle me-2"></i>Xác nhận thanh toán';
+    }
+}
+
+// Đồng hồ đếm thời gian
+(function() {
+    const start = new Date('@Model.OpenedTime.ToString("o")');
+    setInterval(() => {
+        const elapsed = Math.floor((Date.now() - start) / 60000);
+        const timerEl = document.querySelector('[data-table-timer]');
+        if (timerEl) timerEl.textContent = elapsed + ' phút';
+    }, 30000);
+})();
+</script>
+}

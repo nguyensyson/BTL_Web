@@ -1,0 +1,458 @@
+@{
+    ViewData["Title"] = "Màn hình bếp";
+    Layout = "~/Views/Shared/_KitchenLayout.cshtml";
+}
+
+@* Banner mất kết nối (partial dùng chung) *@
+@await Html.PartialAsync("_ConnectionBanner")
+
+<!-- KDS 3 cột Kanban -->
+<div class="row g-2" id="kds-board">
+    <!-- Cột Chờ làm -->
+    <div class="col-md-4">
+        <div class="d-flex align-items-center mb-2">
+            <h6 class="fw-bold mb-0 text-warning">⏳ CHỜ LÀM</h6>
+            <span class="badge bg-warning text-dark ms-2" id="cnt-confirmed">0</span>
+        </div>
+        <div id="col-confirmed"></div>
+    </div>
+    <!-- Cột Đang làm -->
+    <div class="col-md-4">
+        <div class="d-flex align-items-center mb-2">
+            <h6 class="fw-bold mb-0 text-warning" style="color:#E67E22!important">🍳 ĐANG LÀM</h6>
+            <span class="badge ms-2" style="background:#E67E22" id="cnt-cooking">0</span>
+        </div>
+        <div id="col-cooking"></div>
+    </div>
+    <!-- Cột Đã xong -->
+    <div class="col-md-4">
+        <div class="d-flex align-items-center mb-2">
+            <h6 class="fw-bold mb-0 text-success">✅ ĐÃ XONG</h6>
+            <span class="badge bg-success ms-2" id="cnt-ready">0</span>
+        </div>
+        <div id="col-ready"></div>
+    </div>
+</div>
+
+<!-- Empty state -->
+<div id="kds-empty" class="d-none">
+    <div class="text-center py-5" style="color:#6C757D">
+        <i class="bi bi-check-all" style="font-size:3rem"></i>
+        <div class="mt-2 fs-5">Không có món nào đang xử lý</div>
+    </div>
+</div>
+
+<!-- Modal từ chối -->
+<div class="modal fade" id="reject-modal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content rounded-3 bg-dark text-white">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Từ chối / Hết món</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="reject-item-id" />
+                <label class="form-label small">Lý do</label>
+                <input type="text" id="reject-reason" class="form-control form-control-sm bg-dark text-white border-secondary"
+                       placeholder="VD: Hết nguyên liệu..." />
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-danger btn-sm" onclick="submitReject()">Xác nhận</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal hoàn tác -->
+<div class="modal fade" id="undo-modal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content rounded-3 bg-dark text-white">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Hoàn tác trạng thái</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="undo-item-id" />
+                <p class="small mb-2">Hoàn tác món: <strong id="undo-item-name"></strong>?</p>
+                <label class="form-label small">Lý do (tùy chọn)</label>
+                <input type="text" id="undo-reason" class="form-control form-control-sm bg-dark text-white border-secondary"
+                       placeholder="VD: nhầm bấm..." />
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Không</button>
+                <button type="button" class="btn btn-warning btn-sm" onclick="submitUndo()">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Hoàn tác
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<!-- SignalR JS client từ CDN (tương thích mọi môi trường) -->
+<script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.0/dist/browser/signalr.min.js"></script>
+<script>
+// ─────────────────────────────────────────────────────────────────────
+// KDS CLIENT — GĐ 4 + GĐ 8 (SLA, Undo, CourseGroup)
+// ─────────────────────────────────────────────────────────────────────
+
+const _af = document.querySelector('input[name="__RequestVerificationToken"]')?.value ?? '';
+
+// SLA thresholds (phút) — được cập nhật khi load board
+let SLA_WARN_MINUTES = 15;
+let SLA_CRIT_MINUTES = 25;
+
+// State: map itemId → item object
+let kdsItems = {};
+
+function getSlaClass(waitMinutes, statusId) {
+    if (statusId !== 2 && statusId !== 3) return '';
+    if (waitMinutes >= SLA_CRIT_MINUTES) return 'overdue-crit';
+    if (waitMinutes >= SLA_WARN_MINUTES) return 'overdue-warn';
+    return '';
+}
+
+// ── Templates ──────────────────────────────────────────────────────
+function itemCard(item) {
+    const waited = formatWait(item.confirmedTime);
+    const slaClass = getSlaClass(item.waitMinutes || 0, item.statusId);
+    const priorityBadge = item.isPriority
+        ? '<span class="badge bg-danger ms-1 small">GẤP</span>' : '';
+    const editedBadge = item.isEdited
+        ? '<span class="badge bg-info ms-1 small">Đã sửa</span>' : '';
+    const courseBadge = item.courseGroup == 1
+        ? '<span class="badge bg-secondary ms-1 small" title="Khai vị">KV</span>'
+        : item.courseGroup == 3
+        ? '<span class="badge bg-primary ms-1 small" title="Tráng miệng">TM</span>'
+        : '';
+
+    const optsHtml = item.options?.length
+        ? `<div style="font-size:.75rem;color:#ADB5BD">${item.options.join(', ')}</div>` : '';
+    const noteHtml = item.note
+        ? `<div class="mt-1" style="font-size:.75rem;color:#F1C40F"><i class="bi bi-chat-left-text me-1"></i>${item.note}</div>` : '';
+
+    let btnHtml = '';
+    if (item.statusId === 2) // CONFIRMED → Bắt đầu làm
+        btnHtml = `<button class="btn btn-warning btn-sm w-100 mt-2 fw-semibold" onclick="startCooking(${item.id})">▶ Bắt đầu làm</button>`;
+    else if (item.statusId === 3) // COOKING → Xong
+        btnHtml = `<button class="btn btn-success btn-sm w-100 mt-2 fw-semibold" onclick="markDone(${item.id})">✓ Xong</button>`;
+    else if (item.statusId === 4) // READY → Undo
+        btnHtml = `<button class="btn btn-outline-warning btn-sm w-100 mt-2" style="font-size:.8rem" onclick="openUndo(${item.id}, '${item.productName}', 4)">
+            <i class="bi bi-arrow-counterclockwise"></i> Hoàn tác
+        </button>`;
+
+    const rejectBtn = (item.statusId === 2 || item.statusId === 3)
+        ? `<button class="btn btn-outline-danger btn-sm w-100 mt-1" style="font-size:.75rem" onclick="openReject(${item.id})">Hết món / Từ chối</button>` : '';
+    const undoBtn = (item.statusId === 3)
+        ? `<button class="btn btn-outline-warning btn-sm w-100 mt-1" style="font-size:.75rem" onclick="openUndo(${item.id}, '${item.productName}', 3)">
+            <i class="bi bi-arrow-counterclockwise"></i> Hoàn tác
+        </button>` : '';
+
+    return `
+    <div class="kds-item-card ${item.statusId===3?'cooking':item.statusId===4?'ready':''} ${slaClass}"
+         id="kds-item-${item.id}" data-status="${item.statusId}">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <div class="item-table small">
+                    <span class="badge bg-dark bg-opacity-50 me-1" style="font-size:.65rem">B${item.tableCode}</span>
+                    <span class="badge bg-secondary bg-opacity-50" style="font-size:.65rem">Đợt ${item.roundNo}</span>
+                    ${courseBadge}
+                </div>
+                <div class="item-name">${item.productName} × ${item.quantity}${priorityBadge}${editedBadge}</div>
+                ${optsHtml}${noteHtml}
+            </div>
+            <div class="item-timer text-end" id="timer-${item.id}"
+                 data-confirmed="${item.confirmedTime}"
+                 data-warn="@SLA_WARN_MINUTES"
+                 data-crit="@SLA_CRIT_MINUTES">
+                <div style="font-size:.85rem;font-weight:700">${waited}</div>
+                ${slaClass ? `<div style="font-size:.65rem;color:${slaClass==='overdue-crit'?'#E74C3C':'#F1C40F'}">⚠ SLA</div>` : ''}
+            </div>
+        </div>
+        ${btnHtml}${rejectBtn}${undoBtn}
+    </div>`;
+}
+
+// ── Render board ────────────────────────────────────────────────────
+function renderBoard() {
+    const confirmed = Object.values(kdsItems).filter(i => i.statusId === 2);
+    const cooking   = Object.values(kdsItems).filter(i => i.statusId === 3);
+    const ready     = Object.values(kdsItems).filter(i => i.statusId === 4);
+
+    // KIT-04: sắp xếp theo ưu tiên, rồi CourseGroup, rồi thời gian
+    const sortFn = (a, b) => {
+        if (a.isPriority !== b.isPriority) return a.isPriority ? -1 : 1;
+        if ((a.courseGroup || 2) !== (b.courseGroup || 2))
+            return (a.courseGroup || 2) - (b.courseGroup || 2);
+        return new Date(a.confirmedTime) - new Date(b.confirmedTime);
+    };
+
+    document.getElementById('col-confirmed').innerHTML = confirmed.sort(sortFn).map(itemCard).join('');
+    document.getElementById('col-cooking').innerHTML   = cooking.sort(sortFn).map(itemCard).join('');
+    document.getElementById('col-ready').innerHTML     = ready.sort(sortFn).map(itemCard).join('');
+
+    document.getElementById('cnt-confirmed').textContent = confirmed.length;
+    document.getElementById('cnt-cooking').textContent   = cooking.length;
+    document.getElementById('cnt-ready').textContent     = ready.length;
+
+    const pendingCount = confirmed.length + cooking.length;
+    const countEl = document.getElementById('kds-pending-count');
+    if (countEl) countEl.textContent = pendingCount + ' chờ làm';
+
+    const total = confirmed.length + cooking.length + ready.length;
+    document.getElementById('kds-empty').classList.toggle('d-none', total > 0);
+    document.getElementById('kds-board').classList.toggle('d-none', total === 0);
+
+    // KIT-03: cập nhật animation cho các món quá SLA
+    applySlaAnimations();
+}
+
+function applySlaAnimations() {
+    Object.values(kdsItems).forEach(item => {
+        const el = document.getElementById('kds-item-' + item.id);
+        if (!el) return;
+        el.classList.remove('overdue-warn', 'overdue-crit');
+        if (item.statusId !== 2 && item.statusId !== 3) return;
+        el.classList.add(getSlaClass(item.waitMinutes || 0, item.statusId));
+    });
+}
+
+function formatWait(confirmedTime) {
+    if (!confirmedTime) return '';
+    const diff = Math.floor((Date.now() - new Date(confirmedTime)) / 1000);
+    const m = Math.floor(diff / 60);
+    const s = diff % 60;
+    return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+// Cập nhật timer + SLA warning mỗi 5 giây
+setInterval(() => {
+    document.querySelectorAll('[data-confirmed]').forEach(el => {
+        const confirmed = el.dataset.confirmed;
+        const waitMins = confirmed ? Math.floor((Date.now() - new Date(confirmed)) / 60000) : 0;
+        el.querySelector('div') && (el.querySelector('div').textContent = formatWait(confirmed));
+
+        const card = el.closest('.kds-item-card');
+        if (!card) return;
+        const statusId = parseInt(card.dataset.status);
+        if (statusId !== 2 && statusId !== 3) return;
+
+        const warn = parseInt(el.dataset.warn || SLA_WARN_MINUTES);
+        const crit = parseInt(el.dataset.crit || SLA_CRIT_MINUTES);
+
+        card.classList.remove('overdue-warn', 'overdue-crit');
+        if (waitMins >= crit) {
+            card.classList.add('overdue-crit');
+        } else if (waitMins >= warn) {
+            card.classList.add('overdue-warn');
+        }
+
+        // Cập nhật badge SLA
+        let slaBadge = el.parentElement.querySelector('.sla-badge');
+        if (waitMins >= warn) {
+            if (!slaBadge) {
+                slaBadge = document.createElement('div');
+                slaBadge.className = 'sla-badge';
+                slaBadge.style.cssText = 'font-size:.65rem;color:' + (waitMins >= crit ? '#E74C3C' : '#F1C40F');
+                el.parentElement.appendChild(slaBadge);
+            }
+            slaBadge.textContent = '⚠ SLA';
+        } else if (slaBadge) {
+            slaBadge.remove();
+        }
+    });
+}, 5000);
+
+// ── API calls ───────────────────────────────────────────────────────
+async function apiPost(url, body = null) {
+    const opts = { method: 'POST', headers: { 'RequestVerificationToken': _af } };
+    if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+    const res = await fetch(url, opts);
+    if (res.status === 409) { const d = await res.json(); showToast(d.message, 'warning'); return null; }
+    if (!res.ok) { showToast('Lỗi server: ' + res.status, 'danger'); return null; }
+    return res.json();
+}
+
+async function startCooking(id) {
+    const data = await apiPost(`/api/kitchen/items/${id}/start`);
+    if (data) { kdsItems[id] = { ...kdsItems[id], ...data }; renderBoard(); if (window.playKdsSound) playKdsSound(); }
+}
+
+async function markDone(id) {
+    const data = await apiPost(`/api/kitchen/items/${id}/done`);
+    if (data) { kdsItems[id] = { ...kdsItems[id], ...data }; renderBoard(); if (window.playKdsSound) playKdsSound(); }
+}
+
+function openReject(id) {
+    document.getElementById('reject-item-id').value = id;
+    document.getElementById('reject-reason').value = '';
+    new bootstrap.Modal(document.getElementById('reject-modal')).show();
+}
+async function submitReject() {
+    const id = document.getElementById('reject-item-id').value;
+    const reason = document.getElementById('reject-reason').value.trim();
+    const data = await apiPost(`/api/kitchen/items/${id}/reject`, { reason });
+    if (data) {
+        delete kdsItems[id];
+        renderBoard();
+        bootstrap.Modal.getInstance(document.getElementById('reject-modal'))?.hide();
+        showToast('Đã từ chối món.', 'warning');
+    }
+}
+
+// KIT-06: Hoàn tác trạng thái
+function openUndo(id, productName, currentStatus) {
+    document.getElementById('undo-item-id').value = id;
+    document.getElementById('undo-item-name').textContent = productName;
+    document.getElementById('undo-reason').value = '';
+    const desc = currentStatus === 4
+        ? `Món sẽ quay về "Đang làm". Đợi món được phục vụ trước khi bấm hoàn tác.`
+        : `Món sẽ quay về "Chờ làm".`;
+    document.querySelector('#undo-modal .modal-body p.mb-2').textContent = desc;
+    new bootstrap.Modal(document.getElementById('undo-modal')).show();
+}
+async function submitUndo() {
+    const id = document.getElementById('undo-item-id').value;
+    const reason = document.getElementById('undo-reason').value.trim() || null;
+    const data = await apiPost(`/api/kitchen/items/${id}/undo`, { reason });
+    if (data) {
+        bootstrap.Modal.getInstance(document.getElementById('undo-modal'))?.hide();
+        kdsItems[id] = { ...kdsItems[id], ...data };
+        renderBoard();
+        showToast(`Đã hoàn tác "${data.productName}"`, 'info');
+    }
+}
+
+// ── SignalR ─────────────────────────────────────────────────────────
+const connection = new signalR.HubConnectionBuilder()
+    .withUrl("/hubs/kitchen")
+    .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
+    .build();
+
+// Nhận đợt mới từ phục vụ
+connection.on("OrderSubmitted", round => {
+    round.items.forEach(item => {
+        kdsItems[item.id] = {
+            ...item,
+            statusId: 2,
+            tableCode: round.tableCode,
+            roundNo: round.roundNo,
+            waiterId: round.waiterId
+        };
+    });
+    renderBoard();
+    if (window.playKdsSound) playKdsSound();
+    showToast(`Đợt ${round.roundNo} – Bàn ${round.tableCode}: ${round.items.length} món mới`, 'warning', 5000);
+});
+
+// Đổi trạng thái từ bếp hoặc phục vụ
+connection.on("ItemStatusChanged", item => {
+    if (item.statusId === 5 || item.statusId === 6 || item.statusId === 7) {
+        delete kdsItems[item.id];
+    } else {
+        if (kdsItems[item.id]) kdsItems[item.id] = { ...kdsItems[item.id], ...item };
+    }
+    renderBoard();
+});
+
+// Bếp báo sửa/hủy
+connection.on("OrderItemEdited", item => {
+    if (kdsItems[item.id]) {
+        kdsItems[item.id] = { ...kdsItems[item.id], ...item, isEdited: true };
+        renderBoard();
+        showToast(`Món "${item.productName}" đã bị sửa`, 'info', 4000);
+    }
+});
+connection.on("OrderItemCancelled", item => {
+    if (kdsItems[item.id]) {
+        delete kdsItems[item.id];
+        renderBoard();
+        showToast(`Món "${item.productName}" bị hủy`, 'warning', 4000);
+    }
+});
+
+// KIT-03: SLA overdue notification
+connection.on("ItemOverdue", item => {
+    if (kdsItems[item.id]) {
+        kdsItems[item.id].waitMinutes = item.waitMinutes;
+        renderBoard();
+    }
+    showToast(`⚠ "${item.productName}" (Bàn ${item.tableCode}) đã chờ ${item.waitMinutes} phút!`, 'danger', 8000);
+    if (window.playKdsSound) playKdsSound();
+});
+
+// KIT-06: Hoàn tác thành công
+connection.on("ItemStatusReverted", item => {
+    if (kdsItems[item.id]) {
+        kdsItems[item.id] = { ...kdsItems[item.id], ...item };
+        renderBoard();
+    }
+    showToast(`↩ "${item.productName}" đã được hoàn tác`, 'info', 4000);
+});
+
+// TBL-01/02: Chuyển bàn / Gộp bàn → cập nhật tableCode
+connection.on("TableMoved", data => {
+    Object.keys(kdsItems).forEach(id => {
+        if (kdsItems[id].cartId === data.cartId) {
+            kdsItems[id].tableCode = data.allTableCodes;
+        }
+    });
+    renderBoard();
+});
+connection.on("TablesMerged", data => {
+    Object.keys(kdsItems).forEach(id => {
+        if (kdsItems[id].cartId === data.cartId) {
+            kdsItems[id].tableCode = data.allTableCodes;
+        }
+    });
+    renderBoard();
+});
+
+// Reconnect events
+connection.onreconnecting(() => {
+    const banner = document.getElementById('connection-banner');
+    if (banner) { banner.className = 'reconnecting'; }
+    const dot = document.getElementById('kds-connection-dot');
+    if (dot) dot.style.background = '#F1C40F';
+});
+
+connection.onreconnected(async () => {
+    const banner = document.getElementById('connection-banner');
+    if (banner) {
+        banner.className = 'reconnected';
+        document.getElementById('connection-banner-text').textContent = 'Đã kết nối lại';
+        setTimeout(() => banner.className = '', 3000);
+    }
+    const dot = document.getElementById('kds-connection-dot');
+    if (dot) dot.style.background = '#2ECC71';
+    await loadBoard();
+    showToast('Đã kết nối lại', 'success', 2000);
+});
+
+connection.onclose(() => {
+    const banner = document.getElementById('connection-banner');
+    if (banner) {
+        banner.className = 'disconnected';
+        document.getElementById('connection-banner-text').textContent = 'Mất kết nối. Vui lòng tải lại trang.';
+        document.getElementById('connection-reload-btn').style.display = 'inline-block';
+    }
+    const dot = document.getElementById('kds-connection-dot');
+    if (dot) dot.style.background = '#E74C3C';
+});
+
+// ── Bootstrap (KIT-02: tải dữ liệu TRƯỚC rồi mới start) ─────────────
+async function loadBoard() {
+    const res = await fetch('/api/kitchen/board');
+    const items = await res.json();
+    kdsItems = {};
+    items.forEach(i => { kdsItems[i.id] = i; });
+    renderBoard();
+}
+
+(async function init() {
+    await loadBoard();
+    await connection.start();
+})();
+</script>
+}

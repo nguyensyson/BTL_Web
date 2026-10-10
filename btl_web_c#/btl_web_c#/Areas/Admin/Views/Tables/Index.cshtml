@@ -1,0 +1,92 @@
+@using RestaurantOrdering.Models.Entities
+@{
+    ViewData["Title"] = "Bàn ăn";
+    ViewData["Breadcrumb"] = "Bàn ăn";
+    int page = (int)ViewBag.Page;
+    int totalPages = (int)ViewBag.TotalPages;
+    var statusColors = new Dictionary<byte,string>{{1,"#2ECC71"},{2,"#E67E22"},{3,"#E74C3C"},{4,"#3498DB"}};
+}
+<div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="fw-bold mb-0"><i class="bi bi-grid-3x3-gap me-2 text-primary"></i>Bàn ăn</h4>
+    <button class="btn btn-primary" onclick="openForm(0)"><i class="bi bi-plus-lg me-1"></i>Thêm bàn</button>
+</div>
+<form method="get" class="mb-3 d-flex gap-2 flex-wrap">
+    <input type="text" name="q" value="@ViewBag.Q" class="form-control" style="max-width:200px" placeholder="Mã bàn..." />
+    <select name="areaId" class="form-select" style="max-width:200px">
+        <option value="">-- Tất cả khu vực --</option>
+        @foreach (var a in ViewBag.Areas as IEnumerable<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem> ?? []) {
+            <option value="@a.Value" selected="@(a.Value == ViewBag.AreaId?.ToString())">@a.Text</option>
+        }
+    </select>
+    <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-funnel"></i> Lọc</button>
+    <a href="/Admin/Tables" class="btn btn-outline-secondary">Xóa lọc</a>
+</form>
+@if (Model is IEnumerable<DiningTable> tables && tables.Any())
+{
+    <div class="card shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>#</th><th>Mã bàn</th><th>Khu vực</th><th class="text-center">Sức chứa</th><th>Trạng thái</th><th class="text-center">Thứ tự</th><th class="text-end">Thao tác</th></tr>
+                </thead>
+                <tbody>
+                    @{ int idx=(page-1)*15; }
+                    @foreach(var t in tables) {
+                        idx++;
+                        var color = statusColors.GetValueOrDefault(t.StatusId,"#ccc");
+                        <tr>
+                            <td class="text-muted small">@idx</td>
+                            <td class="fw-bold">@t.Code</td>
+                            <td>@t.Area?.Name</td>
+                            <td class="text-center">@t.Capacity người</td>
+                            <td>
+                                <span class="badge" style="background:@color">@t.TableStatus?.Name</span>
+                            </td>
+                            <td class="text-center">@t.SortOrder</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-primary me-1" onclick="openForm(@t.Id)"><i class="bi bi-pencil"></i></button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteItem(@t.Id,'@t.Code')" @(t.StatusId!=1?"disabled":"")><i class="bi bi-trash"></i></button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="d-flex justify-content-between align-items-center mt-3">
+        <small class="text-muted">Tổng: @ViewBag.Total bàn</small>
+        @if(totalPages>1){
+            <nav><ul class="pagination pagination-sm mb-0">
+                @for(int i=Math.Max(1,page-2);i<=Math.Min(totalPages,page+2);i++){
+                    <li class="page-item @(i==page?"active":"")"><a class="page-link" href="?q=@ViewBag.Q&areaId=@ViewBag.AreaId&page=@i">@i</a></li>
+                }
+            </ul></nav>
+        }
+    </div>
+}
+else { <div class="empty-state"><i class="bi bi-grid-3x3-gap fs-1 text-secondary"></i><h5 class="mt-3 text-secondary">Chưa có bàn nào</h5></div> }
+
+<div class="modal fade" id="form-modal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content" id="form-modal-content"></div></div></div>
+@section Scripts {
+<script>
+    const _af=document.querySelector('input[name="__RequestVerificationToken"]')?.value??'';
+    function openForm(id){
+        fetch(`/Admin/Tables/Form?id=${id}`,{headers:{'X-Requested-With':'XMLHttpRequest'}})
+        .then(r=>r.text()).then(html=>{document.getElementById('form-modal-content').innerHTML=html;new bootstrap.Modal(document.getElementById('form-modal')).show();$.validator.unobtrusive.parse('#table-form');});
+    }
+    function submitForm(form){
+        const fd=new FormData(form);
+        fetch(form.action,{method:'POST',body:fd}).then(r=>r.json()).then(data=>{
+            if(data.success){bootstrap.Modal.getInstance(document.getElementById('form-modal'))?.hide();showToast(data.message,'success');setTimeout(()=>location.reload(),800);}
+        });return false;
+    }
+    function deleteItem(id,code){
+        confirmAction(`Xóa bàn "${code}"?`,()=>{
+            const fd=new FormData();fd.append('id',id);fd.append('__RequestVerificationToken',_af);
+            fetch('/Admin/Tables/Delete',{method:'POST',body:fd}).then(r=>r.json()).then(data=>{
+                showToast(data.message,data.success?'success':'danger');if(data.success)setTimeout(()=>location.reload(),800);
+            });
+        });
+    }
+</script>
+}

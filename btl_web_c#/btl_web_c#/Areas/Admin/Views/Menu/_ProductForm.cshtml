@@ -1,0 +1,128 @@
+@model RestaurantOrdering.ViewModels.Admin.ProductViewModel
+<form id="product-form" asp-area="Admin" asp-controller="Menu" asp-action="Save"
+      method="post" enctype="multipart/form-data" onsubmit="return submitForm(this)">
+    <div class="modal-header">
+        <h5 class="modal-title fw-semibold">@(Model.Id==0?"Thêm món ăn":"Sửa món ăn")</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body">
+        <input type="hidden" asp-for="Id"/>
+
+        <div class="row g-3">
+            <div class="col-md-4 mb-3">
+                <label asp-for="Code" class="form-label fw-medium"></label>
+                <input asp-for="Code" class="form-control"/>
+                <span asp-validation-for="Code" class="text-danger small"></span>
+            </div>
+            <div class="col-md-8 mb-3">
+                <label asp-for="Name" class="form-label fw-medium"></label>
+                <input asp-for="Name" class="form-control" autofocus/>
+                <span asp-validation-for="Name" class="text-danger small"></span>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label asp-for="CategoryId" class="form-label fw-medium"></label>
+                <select asp-for="CategoryId" asp-items="Model.Categories" class="form-select">
+                    <option value="">-- Chọn danh mục --</option>
+                </select>
+                <span asp-validation-for="CategoryId" class="text-danger small"></span>
+            </div>
+            <div class="col-md-3 mb-3">
+                <label asp-for="Price" class="form-label fw-medium"></label>
+                <input asp-for="Price" class="form-control" type="number" min="0" step="1000"/>
+                <span asp-validation-for="Price" class="text-danger small"></span>
+            </div>
+            <div class="col-md-3 mb-3">
+                <label asp-for="CourseGroup" class="form-label fw-medium"></label>
+                <select asp-for="CourseGroup" class="form-select">
+                    <option value="1">Khai vị</option>
+                    <option value="2">Món chính</option>
+                    <option value="3">Tráng miệng</option>
+                </select>
+            </div>
+            <div class="col-12 mb-3">
+                <label asp-for="Description" class="form-label fw-medium"></label>
+                <textarea asp-for="Description" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label asp-for="ImageFile" class="form-label fw-medium"></label>
+                <input asp-for="ImageFile" type="file" class="form-control" accept=".jpg,.jpeg,.png,.webp"
+                       onchange="previewImage(this)"/>
+                <span asp-validation-for="ImageFile" class="text-danger small"></span>
+                @if(!string.IsNullOrEmpty(Model.ImageUrl)){
+                    <img id="img-preview" src="@Model.ImageUrl" class="mt-2 rounded" style="height:80px;object-fit:cover"/>
+                } else {
+                    <img id="img-preview" src="" class="mt-2 rounded d-none" style="height:80px;object-fit:cover"/>
+                }
+            </div>
+            <div class="col-md-3 mb-3">
+                <label asp-for="SortOrder" class="form-label fw-medium"></label>
+                <input asp-for="SortOrder" class="form-control" type="number" min="0"/>
+            </div>
+            <div class="col-md-3 mb-3 d-flex align-items-end">
+                <div class="form-check form-switch">
+                    <input asp-for="IsAvailable" class="form-check-input" role="switch"/>
+                    <label asp-for="IsAvailable" class="form-check-label">Còn hàng</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tùy chọn món -->
+        <hr/>
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <h6 class="fw-semibold mb-0">Tùy chọn (size, topping...)</h6>
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="addOption()">
+                <i class="bi bi-plus-lg"></i> Thêm tùy chọn
+            </button>
+        </div>
+        <div id="options-container">
+            @for(int i=0;i<Model.Options.Count;i++){
+                <div class="option-row border rounded p-2 mb-2" data-index="@i">
+                    <input type="hidden" name="Options[@i].Id" value="@Model.Options[i].Id"/>
+                    <input type="hidden" name="Options[@i].ProductId" value="@Model.Options[i].ProductId"/>
+                    <div class="row g-2">
+                        <div class="col-md-4"><input class="form-control form-control-sm" name="Options[@i].Name" value="@Model.Options[i].Name" placeholder="Tên tùy chọn" required/></div>
+                        <div class="col-md-3"><input class="form-control form-control-sm" name="Options[@i].GroupName" value="@Model.Options[i].GroupName" placeholder="Nhóm (Size/Topping...)"/></div>
+                        <div class="col-md-2"><input class="form-control form-control-sm" type="number" name="Options[@i].ExtraPrice" value="@Model.Options[i].ExtraPrice" placeholder="Phụ thu" min="0"/></div>
+                        <div class="col-md-2"><input class="form-control form-control-sm" type="number" name="Options[@i].SortOrder" value="@Model.Options[i].SortOrder" placeholder="Thứ tự" min="0"/></div>
+                        <div class="col-md-1 d-flex align-items-center justify-content-end">
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeOption(this)"><i class="bi bi-trash"></i></button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+        <div asp-validation-summary="ModelOnly" class="text-danger small mt-2"></div>
+    </div>
+    <div class="modal-footer border-0">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Lưu</button>
+    </div>
+</form>
+<script>
+    let optIdx = @Model.Options.Count;
+    function addOption(){
+        const i=optIdx++;
+        const html=`<div class="option-row border rounded p-2 mb-2">
+            <input type="hidden" name="Options[${i}].Id" value="0"/>
+            <input type="hidden" name="Options[${i}].ProductId" value="0"/>
+            <div class="row g-2">
+                <div class="col-md-4"><input class="form-control form-control-sm" name="Options[${i}].Name" placeholder="Tên tùy chọn" required/></div>
+                <div class="col-md-3"><input class="form-control form-control-sm" name="Options[${i}].GroupName" placeholder="Nhóm"/></div>
+                <div class="col-md-2"><input class="form-control form-control-sm" type="number" name="Options[${i}].ExtraPrice" value="0" min="0" placeholder="Phụ thu"/></div>
+                <div class="col-md-2"><input class="form-control form-control-sm" type="number" name="Options[${i}].SortOrder" value="${i}" min="0" placeholder="Thứ tự"/></div>
+                <div class="col-md-1 d-flex align-items-center justify-content-end">
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeOption(this)"><i class="bi bi-trash"></i></button>
+                </div>
+            </div>
+        </div>`;
+        document.getElementById('options-container').insertAdjacentHTML('beforeend',html);
+    }
+    function removeOption(btn){ btn.closest('.option-row').remove(); }
+    function previewImage(input){
+        const file=input.files[0];
+        if(!file)return;
+        const img=document.getElementById('img-preview');
+        img.src=URL.createObjectURL(file);
+        img.classList.remove('d-none');
+    }
+</script>

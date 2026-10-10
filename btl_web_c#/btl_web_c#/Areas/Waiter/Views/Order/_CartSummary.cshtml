@@ -1,0 +1,56 @@
+@using RestaurantOrdering.ViewModels.Waiter
+@{
+    var items = ViewBag.DraftItems as List<CartDraftItem> ?? new();
+    var tableId = (int)(ViewBag.TableId ?? 0);
+    var total = items.Sum(i => i.TotalPrice);
+}
+
+@if (!items.Any())
+{
+    <div class="text-center text-muted py-3 small">
+        <i class="bi bi-cart3 fs-4 d-block mb-1"></i>Chưa có món nào
+    </div>
+}
+else
+{
+    <div class="list-group list-group-flush">
+        @foreach (var item in items)
+        {
+            <div class="list-group-item px-2 py-2" id="draft-item-@item.LocalId">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="flex-grow-1 me-2">
+                        <div class="fw-medium small">@item.ProductName</div>
+                        @if (item.Options.Any())
+                        {
+                            <div class="text-muted" style="font-size:.75rem">@string.Join(", ", item.Options.Select(o => o.OptionName))</div>
+                        }
+                        @if (!string.IsNullOrEmpty(item.Note))
+                        {
+                            <div class="text-muted" style="font-size:.75rem"><i class="bi bi-chat-left-text me-1"></i>@item.Note</div>
+                        }
+                        <div class="d-flex align-items-center gap-1 mt-1">
+                            <button class="btn btn-outline-secondary btn-sm py-0 px-2"
+                                    onclick="changeDraftQty('@item.LocalId', @item.Quantity - 1, @tableId)">−</button>
+                            <span class="mx-1 small fw-semibold" id="qty-@item.LocalId">@item.Quantity</span>
+                            <button class="btn btn-outline-secondary btn-sm py-0 px-2"
+                                    onclick="changeDraftQty('@item.LocalId', @item.Quantity + 1, @tableId)">+</button>
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <div class="small fw-semibold text-primary" id="price-@item.LocalId">
+                            @item.TotalPrice.ToString("N0") ₫
+                        </div>
+                        <button class="btn btn-sm btn-link text-danger p-0 mt-1"
+                                onclick="removeDraftItem('@item.LocalId', @tableId)">
+                            <i class="bi bi-trash3 small"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+    <div class="px-2 py-2 border-top d-flex justify-content-between fw-semibold">
+        <span>Tạm tính</span>
+        <span class="text-primary" id="draft-total">@total.ToString("N0") ₫</span>
+    </div>
+}

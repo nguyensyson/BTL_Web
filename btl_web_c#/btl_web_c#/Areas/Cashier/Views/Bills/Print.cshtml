@@ -1,0 +1,208 @@
+@using RestaurantOrdering.Models.Entities
+@{
+    Layout = null;
+    var bill = ViewBag.Bill as Bill;
+    var settings = ViewBag.Settings as Dictionary<string, string>;
+    var restaurantName = settings?.GetValueOrDefault("RestaurantName", "Nhà hàng") ?? "Nhà hàng";
+    var restaurantAddress = settings?.GetValueOrDefault("RestaurantAddress", "") ?? "";
+    var restaurantPhone = settings?.GetValueOrDefault("RestaurantPhone", "") ?? "";
+}
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8" />
+    <title>Hóa đơn @bill?.BillNo</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #000;
+            background: #fff;
+            padding: 0;
+        }
+        .invoice {
+            width: 80mm;
+            margin: 0 auto;
+            padding: 8px;
+        }
+        .text-center { text-align: center; }
+        .fw-bold { font-weight: bold; }
+        .fs-lg { font-size: 16px; }
+        .mb-1 { margin-bottom: 4px; }
+        .mb-2 { margin-bottom: 8px; }
+        hr { border: none; border-top: 1px dashed #000; margin: 6px 0; }
+        table { width: 100%; border-collapse: collapse; }
+        td { vertical-align: top; padding: 2px 0; }
+        .text-end { text-align: right; }
+        .border-top { border-top: 1px solid #000; }
+        .py-2 { padding-top: 6px; padding-bottom: 6px; }
+        .dot-line { border-bottom: 1px dotted #000; margin: 4px 0; }
+        .qr-placeholder {
+            width: 60px; height: 60px;
+            border: 1px solid #ccc;
+            margin: 8px auto;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 8px; color: #999; text-align: center;
+        }
+        @@media print {
+            body { padding: 0; }
+            .invoice { width: 100%; }
+            button { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="invoice">
+        <!-- Header -->
+        <div class="text-center mb-2">
+            <div class="fw-bold fs-lg">@restaurantName</div>
+            @if (!string.IsNullOrEmpty(restaurantAddress))
+            {
+                <div>@restaurantAddress</div>
+            }
+            @if (!string.IsNullOrEmpty(restaurantPhone))
+            {
+                <div>Tel: @restaurantPhone</div>
+            }
+        </div>
+
+        <hr />
+
+        <div class="text-center mb-2">
+            <div class="fw-bold fs-lg">HÓA ĐƠN</div>
+            <div>No. / Invoice: <strong>@bill?.BillNo</strong></div>
+        </div>
+
+        <hr />
+
+        <!-- Thông tin -->
+        <div class="mb-2">
+            <div>Ngày/Date: @bill?.CreatedTime.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+            <div>Bàn/Tables: @bill?.TableNames</div>
+            <div>NV Thu ngân: @bill?.Cashier?.FullName</div>
+        </div>
+
+        <hr />
+
+        <!-- Danh sách món -->
+        <table>
+            <thead>
+                <tr>
+                    <td><strong>Món</strong></td>
+                    <td class="text-end"><strong>ĐG</strong></td>
+                    <td class="text-end"><strong>SL</strong></td>
+                    <td class="text-end"><strong>TT</strong></td>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in bill?.BillDetails ?? Enumerable.Empty<RestaurantOrdering.Models.Entities.BillDetail>())
+                {
+                    <tr>
+                        <td>@item.ProductName</td>
+                        <td class="text-end">@item.UnitPrice.ToString("N0")</td>
+                        <td class="text-end">@item.Quantity</td>
+                        <td class="text-end">@item.LineTotal.ToString("N0")</td>
+                    </tr>
+                    @if (!string.IsNullOrEmpty(item.OptionsText))
+                    {
+                        <tr>
+                            <td colspan="4" style="padding-left:12px;font-size:10px;color:#555">
+                                + @item.OptionsText
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+
+        <hr />
+
+        <!-- Tổng cộng -->
+        <div class="mb-1">
+            <div class="d-flex justify-content-between">
+                <span>Tạm tính / Subtotal:</span>
+                <span>@bill?.SubTotal.ToString("N0") ₫</span>
+            </div>
+            @if (bill?.ServiceFee > 0)
+            {
+                <div class="d-flex justify-content-between">
+                    <span>Phí dịch vụ / Service:</span>
+                    <span>@bill.ServiceFee.ToString("N0") ₫</span>
+                </div>
+            }
+            <div class="d-flex justify-content-between">
+                <span>Thuế / Tax (@(bill?.TaxAmount > 0 ? "VAT" : "")):</span>
+                <span>@bill?.TaxAmount.ToString("N0") ₫</span>
+            </div>
+        </div>
+
+        <hr />
+
+        <div class="d-flex justify-content-between fw-bold fs-lg py-2 border-top">
+            <span>TỔNG CỘNG:</span>
+            <span>@bill?.TotalAmount.ToString("N0") ₫</span>
+        </div>
+
+        @if (bill?.DiscountAmount > 0)
+        {
+            <div class="d-flex justify-content-between text-danger">
+                <span>Giảm giá:</span>
+                <span>-@bill.DiscountAmount.ToString("N0") ₫</span>
+            </div>
+        }
+
+        <hr />
+
+        <!-- Thanh toán -->
+        <div class="mb-2">
+            <div class="fw-bold mb-1">THANH TOÁN / PAYMENT</div>
+            @foreach (var p in bill?.Payments ?? Enumerable.Empty<RestaurantOrdering.Models.Entities.Payment>())
+            {
+                <div class="d-flex justify-content-between">
+                    <span>@p.PaymentMethod?.Name:</span>
+                    <span>@p.Amount.ToString("N0") ₫</span>
+                </div>
+                @if (!string.IsNullOrEmpty(p.ReferenceNo))
+                {
+                    <div style="font-size:10px;color:#555">Ref: @p.ReferenceNo</div>
+                }
+            }
+        </div>
+
+        @if (bill?.PaidTime.HasValue == true)
+        {
+            <div class="text-center mb-2">
+                <div>Đã thanh toán / Paid</div>
+                <div>@bill.PaidTime.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+            </div>
+        }
+
+        <hr />
+
+        <!-- QR placeholder -->
+        <div class="text-center">
+            <div class="qr-placeholder">
+                [QR Code]<br/>Scan to pay
+            </div>
+        </div>
+
+        <hr />
+
+        <!-- Footer -->
+        <div class="text-center" style="font-size:10px">
+            <div>Cảm ơn Quý khách!</div>
+            <div>Thank you for dining with us!</div>
+        </div>
+
+        <hr />
+
+        <div class="text-center mb-2">
+            <button onclick="window.print()" class="btn btn-sm btn-secondary">
+                <i class="bi bi-printer me-1"></i>In hóa đơn
+            </button>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,25 +1,23 @@
-using btl_web_c_.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Diagnostics;
 
-namespace btl_web_c_.Controllers
+namespace RestaurantOrdering.Controllers;
+
+public class HomeController : Controller
 {
-    public class HomeController : Controller
+    [HttpGet("/")]
+    public IActionResult Index()
     {
-        public IActionResult Index()
-        {
-            return View();
-        }
+        if (User.Identity?.IsAuthenticated != true)
+            return RedirectToAction("Login", "Account");
 
-        public IActionResult Privacy()
-        {
-            return View();
-        }
+        if (User.IsInRole("Admin"))
+            return RedirectToAction("Index", "Dashboard", new { area = "Admin" });
+        if (User.IsInRole("Kitchen"))
+            return RedirectToAction("Index", "Board", new { area = "Kitchen" });
+        if (User.IsInRole("Cashier"))
+            return RedirectToAction("Index", "Bills", new { area = "Cashier" });
 
-        [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
-        public IActionResult Error()
-        {
-            return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
-        }
+        return RedirectToAction("Index", "Tables", new { area = "Waiter" });
     }
 }

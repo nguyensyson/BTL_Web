@@ -1,0 +1,37 @@
+@{
+    ViewData["Title"] = "Tổng quan";
+}
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>Tổng quan</h4>
+    <small class="text-muted">GĐ 2 sẽ hoàn thiện trang này</small>
+</div>
+
+<!-- Stat cards placeholder -->
+<div class="row g-3 mb-4">
+    @foreach (var (icon, label, val, color) in new[] {
+        ("bi-currency-dollar", "Doanh thu hôm nay", "0 ₫", "text-success"),
+        ("bi-receipt", "Số bill hôm nay", "0", "text-primary"),
+        ("bi-grid-3x3-gap", "Bàn đang phục vụ", "0 / 12", "text-warning"),
+        ("bi-clock-history", "Món quá SLA", "0", "text-danger")
+    })
+    {
+        <div class="col-sm-6 col-xl-3">
+            <div class="stat-card">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="fs-2 @color"><i class="bi @icon"></i></div>
+                    <div>
+                        <div class="stat-value">@val</div>
+                        <div class="stat-label">@label</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>
+    <strong>GĐ 1 hoàn thành.</strong> Dashboard đầy đủ sẽ được làm ở <strong>GĐ 9</strong>.
+    Các menu quản trị sẽ được hoàn thiện ở <strong>GĐ 2</strong>.
+</div>
