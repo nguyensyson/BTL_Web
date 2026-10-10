@@ -92,6 +92,8 @@ try
     builder.Services.AddScoped<RestaurantOrdering.Services.SessionCartService>();
     builder.Services.AddScoped<RestaurantOrdering.Services.IRealtimeNotifier,
                                 RestaurantOrdering.Services.SignalRNotifier>();
+    builder.Services.AddScoped<RestaurantOrdering.Services.IAuditService,
+                                RestaurantOrdering.Services.AuditService>();
 
     // ── Background Services ──────────────────────────────────────────────
     builder.Services.AddHostedService<RestaurantOrdering.Services.OverdueItemMonitor>();

@@ -1,0 +1,227 @@
+@model IEnumerable<RestaurantOrdering.ViewModels.Admin.AuditLogListVm>
+@{
+    var filter = ViewBag.Filter as RestaurantOrdering.ViewModels.Admin.AuditLogFilterVm ?? new();
+    var actionList = ViewBag.ActionList as List<string> ?? new();
+    var entityList = ViewBag.EntityList as List<string> ?? new();
+    var userList = ViewBag.UserList as List<dynamic> ?? new();
+    var totalCount = (int)(ViewBag.TotalCount ?? 0);
+    var totalPages = (int)(ViewBag.TotalPages ?? 1);
+    var currentPage = (int)(ViewBag.CurrentPage ?? 1);
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0"><i class="bi bi-shield-check me-2"></i>Nhật ký hoạt động</h4>
+    <span class="badge bg-secondary">@totalCount bản ghi</span>
+</div>
+
+<!-- Filter Form -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2">
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Người dùng</label>
+                <select name="UserId" class="form-select form-select-sm">
+                    <option value="">— Tất cả —</option>
+                    @foreach (var u in userList)
+                    {
+                        <option value="@u.Id" selected="@(filter.UserId == u.Id)">@u.FullName</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Hành động</label>
+                <select name="Action" class="form-select form-select-sm">
+                    <option value="">— Tất cả —</option>
+                    @foreach (var a in actionList)
+                    {
+                        <option value="@a" selected="@(filter.Action == a)">@a</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Đối tượng</label>
+                <select name="EntityName" class="form-select form-select-sm">
+                    <option value="">— Tất cả —</option>
+                    @foreach (var e in entityList)
+                    {
+                        <option value="@e" selected="@(filter.EntityName == e)">@e</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Từ ngày</label>
+                <input type="date" name="FromDate" class="form-control form-control-sm"
+                       value="@(filter.FromDate?.ToString("yyyy-MM-dd") ?? "")" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">Đến ngày</label>
+                <input type="date" name="ToDate" class="form-control form-control-sm"
+                       value="@(filter.ToDate?.ToString("yyyy-MM-dd") ?? "")" />
+            </div>
+            <div class="col-md-2 d-flex align-items-end gap-1">
+                <button type="submit" class="btn btn-primary btn-sm flex-grow-1">
+                    <i class="bi bi-funnel"></i> Lọc
+                </button>
+                <a href="/Admin/AuditLogs" class="btn btn-outline-secondary btn-sm" title="Xóa lọc">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Log Table -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        @if (!Model.Any())
+        {
+            <div class="text-center text-muted py-5">
+                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                Chưa có nhật ký nào.
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:40px">#</th>
+                            <th>Thời gian</th>
+                            <th>Người dùng</th>
+                            <th>Hành động</th>
+                            <th>Đối tượng</th>
+                            <th>ID</th>
+                            <th>IP</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{
+                            var idx = (currentPage - 1) * 20 + 1;
+                            foreach (var log in Model)
+                            {
+                                <tr>
+                                    <td class="text-muted">@(idx++)</td>
+                                    <td>
+                                        <span class="small">@log.CreatedTime.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</span>
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(log.UserName))
+                                        {
+                                            <span>@log.UserName</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">Hệ thống</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-@GetActionBadgeColor(log.Action)">@log.ActionDisplay</span>
+                                    </td>
+                                    <td><span class="small">@log.EntityName</span></td>
+                                    <td><code class="small">@log.EntityId</code></td>
+                                    <td><span class="small text-muted">@log.IpAddress</span></td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(log.OldValues) || !string.IsNullOrEmpty(log.NewValues))
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-info"
+                                                    onclick="showLogDetail(this)"
+                                                    data-old='@Html.Raw(log.OldValues ?? "{}")'
+                                                    data-new='@Html.Raw(log.NewValues ?? "{}")'>
+                                                <i class="bi bi-code-slash"></i>
+                                            </button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            @if (totalPages > 1)
+            {
+                <div class="d-flex justify-content-center py-3 border-top">
+                    <nav>
+                        <ul class="pagination pagination-sm mb-0">
+                            <li class="page-item @(currentPage == 1 ? "disabled" : "")">
+                                <a class="page-link" href="?page=1&UserId=@filter.UserId&Action=@filter.Action&EntityName=@filter.EntityName&FromDate=@filter.FromDate?.ToString("yyyy-MM-dd")&ToDate=@filter.ToDate?.ToString("yyyy-MM-dd")">«</a>
+                            </li>
+                            @for (var i = Math.Max(1, currentPage - 2); i <= Math.Min(totalPages, currentPage + 2); i++)
+                            {
+                                <li class="page-item @(i == currentPage ? "active" : "")">
+                                    <a class="page-link" href="?page=@i&UserId=@filter.UserId&Action=@filter.Action&EntityName=@filter.EntityName&FromDate=@filter.FromDate?.ToString("yyyy-MM-dd")&ToDate=@filter.ToDate?.ToString("yyyy-MM-dd")">@i</a>
+                                </li>
+                            }
+                            <li class="page-item @(currentPage == totalPages ? "disabled" : "")">
+                                <a class="page-link" href="?page=@totalPages&UserId=@filter.UserId&Action=@filter.Action&EntityName=@filter.EntityName&FromDate=@filter.FromDate?.ToString("yyyy-MM-dd")&ToDate=@filter.ToDate?.ToString("yyyy-MM-dd")">»</a>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<!-- Modal: Log Detail -->
+<div class="modal fade" id="logDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-code-slash me-2"></i>Chi tiết thay đổi</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold text-danger">Giá trị cũ</label>
+                            <pre id="oldValuesJson" class="bg-light p-3 rounded small mb-0" style="max-height:300px;overflow:auto;"></pre>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold text-success">Giá trị mới</label>
+                            <pre id="newValuesJson" class="bg-light p-3 rounded small mb-0" style="max-height:300px;overflow:auto;"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@functions {
+    static string GetActionBadgeColor(string action) => action switch
+    {
+        "CANCEL_ITEM" => "danger",
+        "EDIT_ITEM" => "warning",
+        "UNDO_STATUS" => "secondary",
+        "MOVE_TABLE" => "info",
+        "MERGE_TABLE" => "info",
+        "CHANGE_PRICE" => "primary",
+        "ENABLE_ITEM" => "success",
+        "DISABLE_ITEM" => "dark",
+        "LOGIN" => "primary",
+        "CHANGE_ROLE" => "warning",
+        "CREATE" => "success",
+        "UPDATE" => "info",
+        "DELETE" => "danger",
+        _ => "secondary"
+    };
+}
+
+@section Scripts {
+    <script>
+        function showLogDetail(btn) {
+            var oldVal = btn.getAttribute('data-old');
+            var newVal = btn.getAttribute('data-new');
+            document.getElementById('oldValuesJson').textContent = JSON.stringify(JSON.parse(oldVal), null, 2);
+            document.getElementById('newValuesJson').textContent = JSON.stringify(JSON.parse(newVal), null, 2);
+            new bootstrap.Modal(document.getElementById('logDetailModal')).show();
+        }
+    </script>
+}

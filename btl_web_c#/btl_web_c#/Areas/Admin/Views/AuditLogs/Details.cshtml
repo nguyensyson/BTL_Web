@@ -1,0 +1,59 @@
+@model RestaurantOrdering.Models.Entities.AuditLog
+@{
+    ViewData["Title"] = "Chi tiết nhật ký";
+}
+
+<div class="mb-3">
+    <a href="/Admin/AuditLogs" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Quay lại
+    </a>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>Chi tiết nhật ký</h5>
+    </div>
+    <div class="card-body">
+        <dl class="row mb-0">
+            <dt class="col-sm-3 text-muted">ID</dt>
+            <dd class="col-sm-9">@Model.Id</dd>
+
+            <dt class="col-sm-3 text-muted">Thời gian</dt>
+            <dd class="col-sm-9">@Model.CreatedTime.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</dd>
+
+            <dt class="col-sm-3 text-muted">Người dùng</dt>
+            <dd class="col-sm-9">@(Model.User?.FullName ?? "Hệ thống")</dd>
+
+            <dt class="col-sm-3 text-muted">Hành động</dt>
+            <dd class="col-sm-9"><span class="badge bg-secondary">@Model.Action</span></dd>
+
+            <dt class="col-sm-3 text-muted">Đối tượng</dt>
+            <dd class="col-sm-9">@Model.EntityName (ID: <code>@Model.EntityId</code>)</dd>
+
+            <dt class="col-sm-3 text-muted">IP</dt>
+            <dd class="col-sm-9"><code>@Model.IpAddress</code></dd>
+        </dl>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.OldValues) || !string.IsNullOrEmpty(Model.NewValues))
+    {
+        <div class="card-footer bg-white">
+            <div class="row">
+                @if (!string.IsNullOrEmpty(Model.OldValues))
+                {
+                    <div class="col-6">
+                        <label class="form-label fw-semibold text-danger">Giá trị cũ</label>
+                        <pre class="bg-light p-3 rounded small" style="max-height:250px;overflow:auto;">@Model.OldValues</pre>
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(Model.NewValues))
+                {
+                    <div class="col-6">
+                        <label class="form-label fw-semibold text-success">Giá trị mới</label>
+                        <pre class="bg-light p-3 rounded small" style="max-height:250px;overflow:auto;">@Model.NewValues</pre>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>

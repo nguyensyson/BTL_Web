@@ -224,32 +224,6 @@ public class BoardController(
         return Ok(payload);
     }
 
-    // ── GET /api/kitchen/board  (KIT-04: thứ tự ra món) ─────────────────
-    // Route trùng với GetBoard() ở trên — chỉ giữ 1 action duy nhất
-    [HttpGet("/api/kitchen/board")]
-    public async Task<IActionResult> GetBoard()
-    {
-        // Lấy tất cả món CONFIRMED(2), COOKING(3), READY(4)
-        var items = await db.CartItems
-            .Include(ci => ci.Cart)
-                .ThenInclude(c => c.UsedTables.Where(u => u.EndTime == null))
-                    .ThenInclude(u => u.DiningTable)
-            .Include(ci => ci.CartItemOptions)
-            .Include(ci => ci.Product)
-            .Where(ci => ci.StatusId == 2 || ci.StatusId == 3 || ci.StatusId == 4)
-            .ToListAsync();
-
-        // KIT-04: sắp xếp theo ưu tiên, rồi CourseGroup, rồi thời gian
-        var ordered = items
-            .OrderByDescending(ci => ci.IsPriority)
-            .ThenBy(ci => ci.Product?.CourseGroup ?? 2)
-            .ThenBy(ci => ci.ConfirmedTime)
-            .ToList();
-
-        var result = ordered.Select(ci => MapItem(ci));
-        return Json(result);
-    }
-
     // ── Helpers ───────────────────────────────────────────────────────────
     private static object MapItem(CartItem ci)
     {
