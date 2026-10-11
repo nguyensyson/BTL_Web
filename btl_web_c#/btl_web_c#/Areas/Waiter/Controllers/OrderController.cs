@@ -15,7 +15,8 @@ public class OrderController(
     AppDbContext db,
     SessionCartService sessionCart,
     UserManager<ApplicationUser> userManager,
-    IRealtimeNotifier notifier) : Controller
+    IRealtimeNotifier notifier,
+    IAuditService auditService) : Controller
 {
     // ── GET /Waiter/Order/{tableId} ───────────────────────────────────────
     public async Task<IActionResult> Index(int tableId)
@@ -357,6 +358,11 @@ public class OrderController(
             });
         }
 
+        // Ghi audit log hủy món
+        await auditService.LogAsync("CANCEL_ITEM", "CartItem", item.Id.ToString(),
+            new { item.ProductName, item.Quantity, statusId = 2 },
+            new { item.ProductName, item.Quantity, statusId = 6, reason = req.Reason.Trim() });
+
         // Phát sự kiện realtime cho bếp
         var payload = new
         {
@@ -429,6 +435,11 @@ public class OrderController(
                 message = $"Không thể sửa: món '{item.ProductName}' vừa đổi trạng thái."
             });
         }
+
+        // Ghi audit log sửa món
+        await auditService.LogAsync("EDIT_ITEM", "CartItem", item.Id.ToString(),
+            new { item.ProductName, quantity = oldQty, note = oldNote },
+            new { item.ProductName, quantity = req.Quantity, note = req.Note?.Trim() });
 
         // Phát realtime cho bếp (hiện nhãn "Đã chỉnh sửa")
         var payload = new

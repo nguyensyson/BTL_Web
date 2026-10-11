@@ -13,8 +13,7 @@ namespace RestaurantOrdering.Areas.Cashier.Controllers;
 [Authorize(Policy = "CanPay")]
 public class BillsController(
     AppDbContext db,
-    UserManager<ApplicationUser> userManager,
-    IRealtimeNotifier notifier) : Controller
+    UserManager<ApplicationUser> userManager) : Controller
 {
     // ── GET /Cashier ──────────────────────────────────────────────
     public async Task<IActionResult> Index()
@@ -404,6 +403,86 @@ public class BillsController(
         ViewBag.Bill = bill;
         ViewBag.Settings = settings;
         return View();
+    }
+
+    // ── GET /Cashier/Bills/History ──────────────────────────────────
+    public async Task<IActionResult> History(
+        DateTime? fromDate, DateTime? toDate,
+        byte? status, int page = 1)
+    {
+        const int pageSize = 20;
+        fromDate ??= DateTime.Today.AddDays(-30);
+        toDate ??= DateTime.Today;
+
+        var query = db.Bills
+            .Include(b => b.Cashier)
+            .Include(b => b.Payments).ThenInclude(p => p.PaymentMethod)
+            .AsQueryable();
+
+        // Lọc theo ngày (PaidTime hoặc CreatedTime)
+        var from = fromDate.Value.Date;
+        var to = toDate.Value.Date.AddDays(1);
+        query = query.Where(b => b.CreatedTime >= from && b.CreatedTime < to);
+
+        if (status.HasValue)
+            query = query.Where(b => b.Status == status.Value);
+
+        var total = await query.CountAsync();
+        var totalPages = (int)Math.Ceiling(total / (double)pageSize);
+
+        var bills = await query
+            .OrderByDescending(b => b.CreatedTime)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(b => new BillHistoryItemVm
+            {
+                Id = b.Id,
+                BillNo = b.BillNo,
+                TableNames = b.TableNames ?? "",
+                SubTotal = b.SubTotal,
+                ServiceFee = b.ServiceFee,
+                TaxAmount = b.TaxAmount,
+                DiscountAmount = b.DiscountAmount,
+                TotalAmount = b.TotalAmount,
+                Status = b.Status,
+                PaidTime = b.PaidTime,
+                CreatedTime = b.CreatedTime,
+                CashierName = b.Cashier != null ? b.Cashier.FullName : "—",
+                PaymentSummary = string.Join(", ", b.Payments.Select(p =>
+                    $"{p.PaymentMethod.Name}: {p.Amount:N0} ₫"))
+            })
+            .ToListAsync();
+
+        ViewData["Title"] = "Lịch sử hóa đơn";
+        ViewData["AreaTitle"] = "Thu ngân";
+        ViewBag.FromDate = fromDate.Value.ToString("yyyy-MM-dd");
+        ViewBag.ToDate = toDate.Value.ToString("yyyy-MM-dd");
+        ViewBag.Status = status;
+        ViewBag.Page = page;
+        ViewBag.TotalPages = totalPages;
+        ViewBag.TotalCount = total;
+        ViewBag.TotalRevenue = await query.Where(b => b.Status == 1).SumAsync(b => b.TotalAmount);
+
+        return View(bills);
+    }
+
+    // ── GET /Cashier/Bills/Detail/{id} ──────────────────────────────
+    public async Task<IActionResult> Detail(long id)
+    {
+        var bill = await db.Bills
+            .Include(b => b.Cart).ThenInclude(c => c.Waiter)
+            .Include(b => b.Cashier)
+            .Include(b => b.BillDetails)
+            .Include(b => b.Payments).ThenInclude(p => p.PaymentMethod)
+            .FirstOrDefaultAsync(b => b.Id == id);
+
+        if (bill == null) return NotFound();
+
+        var settings = await db.SystemSettings.ToDictionaryAsync(s => s.SettingKey, s => s.SettingValue);
+        ViewData["Title"] = $"Chi tiết hóa đơn {bill.BillNo}";
+        ViewData["AreaTitle"] = "Thu ngân";
+        ViewBag.Settings = settings;
+        return View(bill);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────

@@ -63,3 +63,22 @@ public class PaymentRecordVm
     public string? ReferenceNo { get; set; }
     public DateTime PaidTime { get; set; }
 }
+
+public class BillHistoryItemVm
+{
+    public long Id { get; set; }
+    public string BillNo { get; set; } = "";
+    public string TableNames { get; set; } = "";
+    public decimal SubTotal { get; set; }
+    public decimal ServiceFee { get; set; }
+    public decimal TaxAmount { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public decimal TotalAmount { get; set; }
+    public byte Status { get; set; }
+    public string StatusText => Status switch { 0 => "Chưa TT", 1 => "Đã TT", 2 => "Đã hủy", _ => "?" };
+    public string StatusBadge => Status switch { 0 => "warning", 1 => "success", 2 => "danger", _ => "secondary" };
+    public DateTime? PaidTime { get; set; }
+    public DateTime CreatedTime { get; set; }
+    public string CashierName { get; set; } = "";
+    public string PaymentSummary { get; set; } = "";
+}

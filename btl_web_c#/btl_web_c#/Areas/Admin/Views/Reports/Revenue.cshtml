@@ -1,0 +1,112 @@
+@model RestaurantOrdering.ViewModels.Admin.RevenueReportVm
+@{
+    ViewData["Title"] = "Báo cáo doanh thu";
+}
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-currency-dollar me-2 text-success"></i>Doanh thu</h4>
+    <a href="@Url.Action("ExportRevenueCsv", new { fromDate = Model.Filter.FromDate.ToString("yyyy-MM-dd"), toDate = Model.Filter.ToDate.ToString("yyyy-MM-dd") })"
+       class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-file-earmark-csv me-1"></i>Xuất CSV
+    </a>
+</div>
+
+<!-- Bộ lọc -->
+<form method="get" class="card card-body mb-4 p-3">
+    <div class="row g-2 align-items-end">
+        <div class="col-sm-3">
+            <label class="form-label small fw-semibold">Từ ngày</label>
+            <input type="date" name="fromDate" value="@Model.Filter.FromDate.ToString("yyyy-MM-dd")" class="form-control form-control-sm" />
+        </div>
+        <div class="col-sm-3">
+            <label class="form-label small fw-semibold">Đến ngày</label>
+            <input type="date" name="toDate" value="@Model.Filter.ToDate.ToString("yyyy-MM-dd")" class="form-control form-control-sm" />
+        </div>
+        <div class="col-sm-auto">
+            <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Lọc</button>
+        </div>
+        <div class="col-sm-auto ms-auto">
+            <div class="btn-group btn-group-sm">
+                <a href="@Url.Action("Revenue", new { fromDate = DateTime.Today.ToString("yyyy-MM-dd"), toDate = DateTime.Today.ToString("yyyy-MM-dd") })" class="btn btn-outline-secondary">Hôm nay</a>
+                <a href="@Url.Action("Revenue", new { fromDate = DateTime.Today.AddDays(-6).ToString("yyyy-MM-dd"), toDate = DateTime.Today.ToString("yyyy-MM-dd") })" class="btn btn-outline-secondary">7 ngày</a>
+                <a href="@Url.Action("Revenue", new { fromDate = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).ToString("yyyy-MM-dd"), toDate = DateTime.Today.ToString("yyyy-MM-dd") })" class="btn btn-outline-secondary">Tháng này</a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<!-- Thẻ tổng -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-4">
+        <div class="stat-card">
+            <div class="stat-value text-success">@Model.TotalRevenue.ToString("N0") ₫</div>
+            <div class="stat-label">Tổng doanh thu</div>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="stat-card">
+            <div class="stat-value">@Model.TotalBills</div>
+            <div class="stat-label">Số hóa đơn</div>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="stat-card">
+            <div class="stat-value">@Model.AvgBillValue.ToString("N0") ₫</div>
+            <div class="stat-label">Trung bình/bill</div>
+        </div>
+    </div>
+</div>
+
+<!-- Biểu đồ thanh ngang CSS + Bảng -->
+<div class="card">
+    <div class="card-header fw-semibold">Doanh thu theo ngày</div>
+    <div class="card-body">
+        @if (!Model.Daily.Any() || Model.Daily.All(d => d.BillCount == 0))
+        {
+            <div class="text-muted text-center py-4">Không có dữ liệu trong khoảng thời gian này.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:120px">Ngày</th>
+                            <th class="text-center" style="width:80px">Số bill</th>
+                            <th style="min-width:200px">Doanh thu</th>
+                            <th class="text-end" style="width:150px">Số tiền</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in Model.Daily)
+                        {
+                            var pct = Model.Daily.Max(x => x.TotalRevenue) > 0
+                                ? (int)Math.Round((double)d.TotalRevenue / (double)Model.Daily.Max(x => x.TotalRevenue) * 100)
+                                : 0;
+                            <tr @(d.BillCount == 0 ? "class=text-muted" : "")>
+                                <td>@d.Date.ToString("dd/MM/yyyy")</td>
+                                <td class="text-center">@d.BillCount</td>
+                                <td>
+                                    <div class="progress" style="height:18px; background:#f0f0f0">
+                                        <div class="progress-bar bg-success" style="width:@pct%; font-size:0.7rem; line-height:18px">
+                                            @if (pct > 15) { <span>&nbsp;@d.TotalRevenue.ToString("N0") ₫</span> }
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="text-end fw-semibold">@d.TotalRevenue.ToString("N0") ₫</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot class="table-light fw-bold">
+                        <tr>
+                            <td>Tổng</td>
+                            <td class="text-center">@Model.TotalBills</td>
+                            <td></td>
+                            <td class="text-end">@Model.TotalRevenue.ToString("N0") ₫</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        }
+    </div>
+</div>

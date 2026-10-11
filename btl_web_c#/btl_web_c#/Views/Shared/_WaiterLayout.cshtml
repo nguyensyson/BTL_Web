@@ -18,10 +18,21 @@
             <span class="brand">@(ViewData["AreaTitle"] ?? "Phục vụ")</span>
         </div>
         <div class="d-flex align-items-center gap-2">
-            <a href="/Waiter/Tables" class="btn btn-sm btn-light @(ViewContext.RouteData.Values["controller"]?.ToString() == "Tables" ? "active" : "")">
+            <a href="/Waiter/Tables" class="btn btn-sm btn-light @(ViewContext.RouteData.Values["controller"]?.ToString() == "Tables" && ViewContext.RouteData.Values["area"]?.ToString() == "Waiter" ? "active" : "")">
                 <i class="bi bi-grid-3x3-gap"></i>
                 <span class="d-none d-sm-inline ms-1">Sơ đồ bàn</span>
             </a>
+            @if (User.IsInRole("Cashier") || User.IsInRole("Admin"))
+            {
+                <a href="/Cashier/Bills" class="btn btn-sm btn-light @(ViewContext.RouteData.Values["area"]?.ToString() == "Cashier" && ViewContext.RouteData.Values["action"]?.ToString() != "History" ? "active" : "")">
+                    <i class="bi bi-cash-coin"></i>
+                    <span class="d-none d-sm-inline ms-1">Thanh toán</span>
+                </a>
+                <a href="/Cashier/Bills/History" class="btn btn-sm btn-light @(ViewContext.RouteData.Values["action"]?.ToString() == "History" ? "active" : "")">
+                    <i class="bi bi-journal-text"></i>
+                    <span class="d-none d-sm-inline ms-1">Lịch sử HĐ</span>
+                </a>
+            }
             <div class="dropdown">
                 <button class="btn btn-sm btn-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
                     <i class="bi bi-person-circle"></i>

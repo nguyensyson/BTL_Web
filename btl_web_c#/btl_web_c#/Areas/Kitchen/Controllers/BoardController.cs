@@ -13,7 +13,8 @@ namespace RestaurantOrdering.Areas.Kitchen.Controllers;
 public class BoardController(
     AppDbContext db,
     UserManager<ApplicationUser> userManager,
-    IRealtimeNotifier notifier) : Controller
+    IRealtimeNotifier notifier,
+    IAuditService auditService) : Controller
 {
     // ── GET /Kitchen/Board ────────────────────────────────────────────────
     public IActionResult Index()
@@ -121,8 +122,10 @@ public class BoardController(
     {
         var product = await db.Products.FindAsync(id);
         if (product == null) return NotFound(new { message = "Không tìm thấy món." });
+        var oldValue = product.IsAvailable;
         product.IsAvailable = !product.IsAvailable;
         await db.SaveChangesAsync();
+        await auditService.LogToggleAvailabilityAsync(product.Id, product.Name, oldValue, product.IsAvailable, 0);
         await notifier.MenuItemAvailabilityChangedAsync(product.Id, product.IsAvailable, product.Name);
         return Ok(new { success = true, isAvailable = product.IsAvailable, productName = product.Name });
     }
@@ -162,6 +165,11 @@ public class BoardController(
         var payload = MapItem(item);
         await notifier.ItemStatusChangedAsync(payload);
         await notifier.ItemRejectedAsync(item.Cart.WaiterId, payload);
+
+        // Ghi audit log bếp từ chối
+        await auditService.LogAsync("REJECT_ITEM", "CartItem", item.Id.ToString(),
+            new { item.ProductName, item.Quantity, statusId = fromStatus },
+            new { item.ProductName, item.Quantity, statusId = 7, reason = req.Reason });
 
         return Ok(payload);
     }
@@ -220,6 +228,11 @@ public class BoardController(
         var payload = MapItem(item);
         await notifier.ItemStatusChangedAsync(payload);
         await notifier.ItemStatusRevertedAsync(item.Cart.WaiterId, payload);
+
+        // Ghi audit log hoàn tác trạng thái
+        await auditService.LogAsync("UNDO_STATUS", "CartItem", item.Id.ToString(),
+            new { item.ProductName, statusId = fromStatus },
+            new { item.ProductName, statusId = newStatus.Value, reason = req.Reason ?? "Hoàn tác" });
 
         return Ok(payload);
     }

@@ -1,0 +1,54 @@
+@model RestaurantOrdering.ViewModels.Admin.PeakHourReportVm
+@{
+    ViewData["Title"] = "Giờ cao điểm";
+}
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-clock me-2 text-warning"></i>Giờ cao điểm</h4>
+</div>
+
+<!-- Bộ lọc -->
+<form method="get" class="card card-body mb-4 p-3">
+    <div class="row g-2 align-items-end">
+        <div class="col-sm-3">
+            <label class="form-label small fw-semibold">Từ ngày</label>
+            <input type="date" name="fromDate" value="@Model.Filter.FromDate.ToString("yyyy-MM-dd")" class="form-control form-control-sm" />
+        </div>
+        <div class="col-sm-3">
+            <label class="form-label small fw-semibold">Đến ngày</label>
+            <input type="date" name="toDate" value="@Model.Filter.ToDate.ToString("yyyy-MM-dd")" class="form-control form-control-sm" />
+        </div>
+        <div class="col-sm-auto">
+            <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Lọc</button>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-header fw-semibold">Phân phối theo giờ</div>
+    <div class="card-body">
+        @if (Model.Items.All(h => h.BillCount == 0))
+        {
+            <div class="text-muted text-center py-4">Không có dữ liệu trong khoảng thời gian này.</div>
+        }
+        else
+        {
+            <div class="d-flex flex-column gap-2">
+                @foreach (var h in Model.Items)
+                {
+                    var pct = h.MaxBills > 0 ? (int)Math.Round((double)h.BillCount / h.MaxBills * 100) : 0;
+                    var color = pct >= 80 ? "danger" : pct >= 50 ? "warning" : pct >= 20 ? "primary" : "secondary";
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="text-muted small" style="width:50px">@h.Hour.ToString("00"):00</span>
+                        <div class="progress flex-grow-1" style="height:22px; background:#f0f0f0">
+                            <div class="progress-bar bg-@color" style="width:@(Math.Max(pct, 1))%; font-size:0.75rem; line-height:22px">
+                                @if (pct > 8) { <span>&nbsp;@h.BillCount bill</span> }
+                            </div>
+                        </div>
+                        <span class="text-muted small" style="width:110px; text-align:right">@h.Revenue.ToString("N0") ₫</span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>

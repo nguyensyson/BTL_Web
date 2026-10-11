@@ -1,0 +1,153 @@
+@model List<RestaurantOrdering.ViewModels.Cashier.BillHistoryItemVm>
+@{
+    ViewData["Title"] = "Lịch sử hóa đơn";
+    var page = (int)ViewBag.Page;
+    var totalPages = (int)ViewBag.TotalPages;
+    var totalCount = (int)ViewBag.TotalCount;
+    var totalRevenue = (decimal)ViewBag.TotalRevenue;
+    var fromDate = (string)ViewBag.FromDate;
+    var toDate = (string)ViewBag.ToDate;
+    byte? statusFilter = ViewBag.Status;
+}
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-journal-text me-2 text-primary"></i>Lịch sử hóa đơn</h4>
+    <div class="d-flex gap-2">
+        <a href="@Url.Action("History", new { fromDate, toDate, status = statusFilter, page = 1 })"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-file-earmark-csv me-1"></i>Xuất CSV
+        </a>
+    </div>
+</div>
+
+<!-- Bộ lọc -->
+<form method="get" class="card card-body mb-4 p-3">
+    <div class="row g-2 align-items-end">
+        <div class="col-sm-3">
+            <label class="form-label small fw-semibold">Từ ngày</label>
+            <input type="date" name="fromDate" value="@fromDate" class="form-control form-control-sm" />
+        </div>
+        <div class="col-sm-3">
+            <label class="form-label small fw-semibold">Đến ngày</label>
+            <input type="date" name="toDate" value="@toDate" class="form-control form-control-sm" />
+        </div>
+        <div class="col-sm-2">
+            <label class="form-label small fw-semibold">Trạng thái</label>
+            <select name="status" class="form-select form-select-sm">
+                <option value="">Tất cả</option>
+                <option value="0" selected="@(statusFilter.HasValue && statusFilter == 0 ? "selected" : null)">Chưa thanh toán</option>
+                <option value="1" selected="@(statusFilter.HasValue && statusFilter == 1 ? "selected" : null)">Đã thanh toán</option>
+                <option value="2" selected="@(statusFilter.HasValue && statusFilter == 2 ? "selected" : null)">Đã hủy</option>
+            </select>
+        </div>
+        <div class="col-sm-auto">
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="bi bi-search me-1"></i>Lọc
+            </button>
+            <a href="@Url.Action("History")" class="btn btn-outline-secondary btn-sm ms-1">Đặt lại</a>
+        </div>
+    </div>
+</form>
+
+<!-- Tổng kết -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-4">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3">
+                <div class="fs-3 text-primary"><i class="bi bi-receipt"></i></div>
+                <div>
+                    <div class="stat-value">@totalCount</div>
+                    <div class="stat-label">Số hóa đơn</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3">
+                <div class="fs-3 text-success"><i class="bi bi-currency-dollar"></i></div>
+                <div>
+                    <div class="stat-value">@totalRevenue.ToString("N0") ₫</div>
+                    <div class="stat-label">Doanh thu đã thanh toán</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bảng danh sách -->
+@if (!Model.Any())
+{
+    <div class="empty-state py-5">
+        <i class="bi bi-journal-x fs-1 text-muted"></i>
+        <p class="mt-3 text-muted">Không có hóa đơn nào trong khoảng thời gian này.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Mã HĐ</th>
+                        <th>Bàn</th>
+                        <th class="text-end">Tổng tiền</th>
+                        <th>Trạng thái</th>
+                        <th>Thời gian TT</th>
+                        <th>Thu ngân</th>
+                        <th>Phương thức</th>
+                        <th class="text-center">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var b in Model)
+                    {
+                        <tr>
+                            <td><code class="fw-bold text-primary">@b.BillNo</code></td>
+                            <td>@b.TableNames</td>
+                            <td class="text-end fw-semibold">@b.TotalAmount.ToString("N0") ₫</td>
+                            <td>
+                                <span class="badge bg-@b.StatusBadge">@b.StatusText</span>
+                            </td>
+                            <td class="text-muted small">
+                                @(b.PaidTime?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? b.CreatedTime.ToLocalTime().ToString("dd/MM/yyyy HH:mm"))
+                            </td>
+                            <td>@b.CashierName</td>
+                            <td class="small text-muted">@b.PaymentSummary</td>
+                            <td class="text-center">
+                                <div class="d-flex gap-1 justify-content-center">
+                                    <a href="@Url.Action("Detail", new { id = b.Id })"
+                                       class="btn btn-outline-secondary btn-sm" title="Chi tiết">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Phân trang -->
+    @if (totalPages > 1)
+    {
+        <nav class="mt-3">
+            <ul class="pagination pagination-sm justify-content-center mb-0">
+                <li class="page-item @(page <= 1 ? "disabled" : "")">
+                    <a class="page-link" href="@Url.Action("History", new { fromDate, toDate, status = statusFilter, page = page - 1 })">‹</a>
+                </li>
+                @for (var p = Math.Max(1, page - 2); p <= Math.Min(totalPages, page + 2); p++)
+                {
+                    <li class="page-item @(p == page ? "active" : "")">
+                        <a class="page-link" href="@Url.Action("History", new { fromDate, toDate, status = statusFilter, page = p })">@p</a>
+                    </li>
+                }
+                <li class="page-item @(page >= totalPages ? "disabled" : "")">
+                    <a class="page-link" href="@Url.Action("History", new { fromDate, toDate, status = statusFilter, page = page + 1 })">›</a>
+                </li>
+            </ul>
+        </nav>
+    }
+}

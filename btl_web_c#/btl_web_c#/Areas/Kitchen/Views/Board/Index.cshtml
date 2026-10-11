@@ -164,8 +164,8 @@ function itemCard(item) {
             </div>
             <div class="item-timer text-end" id="timer-${item.id}"
                  data-confirmed="${item.confirmedTime}"
-                 data-warn="@SLA_WARN_MINUTES"
-                 data-crit="@SLA_CRIT_MINUTES">
+                 data-warn="${SLA_WARN_MINUTES}"
+                 data-crit="${SLA_CRIT_MINUTES}">
                 <div style="font-size:.85rem;font-weight:700">${waited}</div>
                 ${slaClass ? `<div style="font-size:.65rem;color:${slaClass==='overdue-crit'?'#E74C3C':'#F1C40F'}">⚠ SLA</div>` : ''}
             </div>

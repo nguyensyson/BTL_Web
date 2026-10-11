@@ -1,37 +1,140 @@
+@model RestaurantOrdering.ViewModels.Admin.DashboardViewModel
 @{
     ViewData["Title"] = "Tổng quan";
 }
 
 <div class="d-flex align-items-center justify-content-between mb-4">
-    <h4 class="fw-bold mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>Tổng quan</h4>
-    <small class="text-muted">GĐ 2 sẽ hoàn thiện trang này</small>
+    <h4 class="fw-bold mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>Tổng quan hôm nay</h4>
+    <small class="text-muted">@DateTime.Now.ToString("dddd, dd/MM/yyyy")</small>
 </div>
 
-<!-- Stat cards placeholder -->
+<!-- Thẻ số liệu -->
 <div class="row g-3 mb-4">
-    @foreach (var (icon, label, val, color) in new[] {
-        ("bi-currency-dollar", "Doanh thu hôm nay", "0 ₫", "text-success"),
-        ("bi-receipt", "Số bill hôm nay", "0", "text-primary"),
-        ("bi-grid-3x3-gap", "Bàn đang phục vụ", "0 / 12", "text-warning"),
-        ("bi-clock-history", "Món quá SLA", "0", "text-danger")
-    })
-    {
-        <div class="col-sm-6 col-xl-3">
-            <div class="stat-card">
-                <div class="d-flex align-items-center gap-3">
-                    <div class="fs-2 @color"><i class="bi @icon"></i></div>
-                    <div>
-                        <div class="stat-value">@val</div>
-                        <div class="stat-label">@label</div>
-                    </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3">
+                <div class="fs-2 text-success"><i class="bi bi-currency-dollar"></i></div>
+                <div>
+                    <div class="stat-value">@Model.TodayRevenue.ToString("N0") ₫</div>
+                    <div class="stat-label">Doanh thu hôm nay</div>
                 </div>
             </div>
         </div>
-    }
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3">
+                <div class="fs-2 text-primary"><i class="bi bi-receipt"></i></div>
+                <div>
+                    <div class="stat-value">@Model.TodayBillCount</div>
+                    <div class="stat-label">Số bill hôm nay</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="stat-card">
+            <div class="d-flex align-items-center gap-3">
+                <div class="fs-2 text-warning"><i class="bi bi-grid-3x3-gap"></i></div>
+                <div>
+                    <div class="stat-value">@Model.OccupiedTableCount / @Model.TotalTableCount</div>
+                    <div class="stat-label">Bàn đang phục vụ</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="stat-card @(Model.OverdueSlaCount > 0 ? "border-danger" : "")">
+            <div class="d-flex align-items-center gap-3">
+                <div class="fs-2 @(Model.OverdueSlaCount > 0 ? "text-danger" : "text-muted")">
+                    <i class="bi bi-clock-history"></i>
+                </div>
+                <div>
+                    <div class="stat-value @(Model.OverdueSlaCount > 0 ? "text-danger" : "")">@Model.OverdueSlaCount</div>
+                    <div class="stat-label">Món quá SLA</div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
-<div class="alert alert-info">
-    <i class="bi bi-info-circle me-2"></i>
-    <strong>GĐ 1 hoàn thành.</strong> Dashboard đầy đủ sẽ được làm ở <strong>GĐ 9</strong>.
-    Các menu quản trị sẽ được hoàn thiện ở <strong>GĐ 2</strong>.
+<div class="row g-4">
+    <!-- Top món bán chạy -->
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <span class="fw-semibold"><i class="bi bi-bar-chart me-2 text-primary"></i>Top món hôm nay</span>
+                <a href="@Url.Action("Index", "Reports", new { area = "Admin" })" class="small text-primary">Xem báo cáo →</a>
+            </div>
+            <div class="card-body">
+                @if (!Model.TopProducts.Any())
+                {
+                    <div class="text-muted small text-center py-3">Chưa có dữ liệu hôm nay.</div>
+                }
+                else
+                {
+                    <div class="d-flex flex-column gap-3">
+                        @foreach (var (p, i) in Model.TopProducts.Select((x, idx) => (x, idx + 1)))
+                        {
+                            var pct = Model.TopProducts[0].TotalQty > 0
+                                ? (int)Math.Round((double)p.TotalQty / Model.TopProducts[0].TotalQty * 100)
+                                : 0;
+                            var barColor = i == 1 ? "primary" : i == 2 ? "info" : "secondary";
+                            <div>
+                                <div class="d-flex justify-content-between small mb-1">
+                                    <span class="fw-semibold">@i. @p.ProductName</span>
+                                    <span class="text-muted">@p.TotalQty phần · @p.TotalRevenue.ToString("N0") ₫</span>
+                                </div>
+                                <div class="progress" style="height:8px">
+                                    <div class="progress-bar bg-@barColor" style="width:@pct%"></div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Bill gần đây -->
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <span class="fw-semibold"><i class="bi bi-journal-text me-2 text-primary"></i>Hóa đơn gần đây</span>
+                <a href="@Url.Action("History", "Bills", new { area = "Cashier" })" class="small text-primary">Xem tất cả →</a>
+            </div>
+            <div class="card-body p-0">
+                @if (!Model.RecentBills.Any())
+                {
+                    <div class="text-muted small text-center py-3">Chưa có hóa đơn nào.</div>
+                }
+                else
+                {
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Mã HĐ</th>
+                                <th>Bàn</th>
+                                <th class="text-end">Tổng tiền</th>
+                                <th>Trạng thái</th>
+                                <th class="text-muted small">Thời gian</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var b in Model.RecentBills)
+                            {
+                                <tr>
+                                    <td><code class="small">@b.BillNo</code></td>
+                                    <td>@b.TableNames</td>
+                                    <td class="text-end fw-semibold">@b.TotalAmount.ToString("N0") ₫</td>
+                                    <td><span class="badge bg-@b.StatusBadge">@b.StatusText</span></td>
+                                    <td class="text-muted small">@b.CreatedTime.ToLocalTime().ToString("HH:mm dd/MM")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    </div>
 </div>

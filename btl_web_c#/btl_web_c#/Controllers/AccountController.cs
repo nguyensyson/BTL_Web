@@ -2,13 +2,15 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using RestaurantOrdering.Models.Entities;
+using RestaurantOrdering.Services;
 using RestaurantOrdering.ViewModels;
 
 namespace RestaurantOrdering.Controllers;
 
 public class AccountController(
     SignInManager<ApplicationUser> signInManager,
-    UserManager<ApplicationUser> userManager) : Controller
+    UserManager<ApplicationUser> userManager,
+    IAuditService auditService) : Controller
 {
     // ── GET /Account/Login ───────────────────────────────────────────────
     [HttpGet]
@@ -48,6 +50,10 @@ public class AccountController(
             // Cập nhật thời gian đăng nhập
             user.LastLoginTime = DateTime.UtcNow;
             await userManager.UpdateAsync(user);
+
+            // Ghi audit log đăng nhập
+            var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
+            await auditService.LogLoginAsync(user.Id, ip);
 
             if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
                 return Redirect(returnUrl);

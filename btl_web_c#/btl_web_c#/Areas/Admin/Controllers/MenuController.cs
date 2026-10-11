@@ -11,7 +11,7 @@ namespace RestaurantOrdering.Areas.Admin.Controllers;
 
 [Area("Admin")]
 [Authorize(Roles = "Admin")]
-public class MenuController(AppDbContext db, IWebHostEnvironment env, IRealtimeNotifier notifier) : Controller
+public class MenuController(AppDbContext db, IWebHostEnvironment env, IRealtimeNotifier notifier, IAuditService auditService) : Controller
 {
     private const int PageSize = 12;
     private static readonly string[] AllowedExt = [".jpg", ".jpeg", ".png", ".webp"];
@@ -121,12 +121,19 @@ public class MenuController(AppDbContext db, IWebHostEnvironment env, IRealtimeN
             await db.SaveChangesAsync();
             // Lưu options
             await SaveOptions(product.Id, vm.Options);
+            await auditService.LogAsync("CREATE_PRODUCT", "Product", product.Id.ToString(),
+                null, new { product.Code, product.Name, product.Price });
         }
         else
         {
             var product = await db.Products.Include(p => p.ProductItemOptions)
                 .FirstOrDefaultAsync(p => p.Id == vm.Id);
             if (product == null) return NotFound();
+
+            // Ghi audit nếu giá thay đổi
+            if (product.Price != vm.Price)
+                await auditService.LogChangePriceAsync(product.Id, product.Name, product.Price, vm.Price, 0);
+
             product.Code = vm.Code; product.Name = vm.Name; product.CategoryId = vm.CategoryId;
             product.Price = vm.Price; product.CourseGroup = vm.CourseGroup;
             product.Description = vm.Description; product.IsAvailable = vm.IsAvailable;
@@ -144,8 +151,11 @@ public class MenuController(AppDbContext db, IWebHostEnvironment env, IRealtimeN
     {
         var product = await db.Products.FindAsync(id);
         if (product == null) return Json(new { success = false });
+        var oldValue = product.IsAvailable;
         product.IsAvailable = !product.IsAvailable;
         await db.SaveChangesAsync();
+        // Ghi audit log bật/tắt món
+        await auditService.LogToggleAvailabilityAsync(product.Id, product.Name, oldValue, product.IsAvailable, 0);
         // Phát realtime cho phục vụ và bếp
         await notifier.MenuItemAvailabilityChangedAsync(product.Id, product.IsAvailable, product.Name);
         return Json(new { success = true, isAvailable = product.IsAvailable });
